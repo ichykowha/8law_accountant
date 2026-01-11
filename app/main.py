@@ -15,8 +15,8 @@ from auth import check_password
 st.set_page_config(
     page_title="8law Scanner",
     page_icon="📸",
-    layout="wide",
-    initial_sidebar_state="collapsed" # Hides sidebar on mobile by default
+    layout="centered", # <--- Better for mobile
+    initial_sidebar_state="collapsed"
 )
 
 # --- 2. SECURITY ---

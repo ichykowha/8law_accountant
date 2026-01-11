@@ -1,0 +1,40 @@
+{
+  "document_metadata": {
+    "source_file": "IMG_8842.HEIC",
+    "ingestion_method": "AI_VISION_V2",
+    "timestamp": "2026-01-05T10:15:00Z",
+    "file_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "merchant": {
+    "name": "Global Tech & Cafe",
+    "address": "123 Innovation Way, London, UK",
+    "vat_number": "GB987654321",
+    "category": "Office & Meals"
+  },
+  "transaction": {
+    "date": "2026-01-04",
+    "currency": "GBP",
+    "payment_method": "Visa ****1234",
+    "line_items": [
+      {
+        "description": "Ergonomic Keyboard",
+        "quantity": 1,
+        "unit_price": 80.00,
+        "tax_rate": 0.20,
+        "total": 96.00
+      },
+      {
+        "description": "Premium Coffee Beans",
+        "quantity": 2,
+        "unit_price": 10.00,
+        "tax_rate": 0.05,
+        "total": 21.00
+      }
+    ],
+    "financial_summary": {
+      "subtotal": 100.00,
+      "total_tax": 17.00,
+      "grand_total": 117.00
+    }
+  }
+}

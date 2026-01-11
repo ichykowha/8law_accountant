@@ -1,0 +1,14 @@
+streamlit
+torch
+pandas
+numpy
+matplotlib
+openpyxl
+python-docx
+Pillow
+lxml
+python-magic
+pi-heif
+scikit-learn
+qrcode
+google-generativeai

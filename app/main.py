@@ -23,6 +23,22 @@ st.set_page_config(
 if not check_password():
     st.stop()
 
+# --- MOBILE TWEAKS (Full Screen & Clean UI) ---
+# This hides the Streamlit "Hamburger" menu, the "Deploy" button, and the Footer.
+hide_streamlit_style = """
+<style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    /* Remove top padding to pull content up */
+    .block-container {
+        padding-top: 1rem !important; 
+        padding-bottom: 0rem !important;
+    }
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # --- 3. INIT ---
 if 'accountant' not in st.session_state:
     st.session_state.accountant = PowerhouseAccountant()

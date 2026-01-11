@@ -3,7 +3,7 @@ from datetime import datetime
 
 class AccountingMemory:
     def __init__(self, db_name="accountant_pi.db"):
-        self.conn = sqlite3.connect(db_name)
+        self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self._create_tables()
 

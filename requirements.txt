@@ -12,3 +12,5 @@ pi-heif
 scikit-learn
 qrcode
 google-generativeai
+pytesseract
+streamlit

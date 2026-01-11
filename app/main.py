@@ -12,10 +12,11 @@ from controller import PowerhouseAccountant
 from auth import check_password
 
 # --- 1. CONFIG ---
+# --- 1. CONFIG ---
 st.set_page_config(
     page_title="8law Scanner",
-    page_icon="📸",
-    layout="centered", # <--- Better for mobile
+    page_icon="⚖️", # The Greek symbol of balance
+    layout="centered",
     initial_sidebar_state="collapsed"
 )
 

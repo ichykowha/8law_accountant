@@ -18,7 +18,7 @@ from backend.tax_engine import TaxEngine
 from backend.audit import AuditTrail           
 from backend.reporting import ReportingEngine  
 from backend.forecaster import BalanceForecaster 
-from backend.query_engine import DataQueryAssistant # NEW
+from backend.query_engine import DataQueryAssistant 
 
 class PowerhouseAccountant:
     def __init__(self):
@@ -34,21 +34,17 @@ class PowerhouseAccountant:
         self.audit = AuditTrail()
         self.reporter = ReportingEngine(self.memory)
         self.forecaster = BalanceForecaster()
-        self.query_engine = DataQueryAssistant() # NEW
+        self.query_engine = DataQueryAssistant()
         
     def process_input(self, user_text):
         # 1. Handle Pending Tasks
         if self.handler.pending_task:
             return self.continue_pending_task(user_text)
 
-        # 2. Detect Intent
+        # 2. Detect Specific Actions (Charts, Uploads)
         intent = self.detect_intent(user_text)
 
-        # 3. Routing Logic
-        if intent == "QUERY_DATA":
-            return self.query_engine.ask(user_text)
-
-        elif intent == "FORECAST":
+        if intent == "FORECAST":
             data = self.forecaster.project_balance(30)
             return f"Projection (30 Days): Current ${data['current_balance']} -> Future ${data['projected_balance']}. Status: {data['status']}"
 
@@ -59,29 +55,30 @@ class PowerhouseAccountant:
             status = self.visualizer.plot_revenue_vs_expenses()
             return f"Chart updated. {status}"
 
-        elif intent == "MATH":
-            if "tax" in user_text.lower():
-                res = self.tax_engine.calculate_tax(1000, "CA_BC_GST_PST")
-                return f"Tax Calculation (BC Example): On $1000, Net is ${res['net_revenue']}, Tax is ${res['tax_collected']}"
-            else:
-                return "I can calculate taxes or interest. Please specify."
-        
         elif intent == "INGEST":
             return "To ingest data, please drag and drop a file in the sidebar."
 
-        # Default Chat
-        self.memory.save_chat(user_text, "Processed")
-        return "I'm listening. Ask me about your spending, forecasts, or upload a receipt."
+        # 3. THE UPGRADE: "Chat with Data" (Default Fallback)
+        # If we don't know what to do, we ask the AI Brain.
+        
+        # We use the query engine we built. It returns a dictionary {answer, reasoning}
+        # We just want the answer string for the simple chat window.
+        ai_result = self.query_engine.ask(user_text)
+        
+        # Save to memory
+        self.memory.save_chat(user_text, ai_result['answer'])
+        
+        return ai_result['answer']
 
     def detect_intent(self, text):
         text = text.lower()
-        if any(w in text for w in ["spent", "cost", "how much", "total for"]): return "QUERY_DATA"
-        if any(w in text for w in ["future", "predict", "forecast", "runway", "cash flow"]): return "FORECAST"
-        if any(w in text for w in ["report", "p&l", "balance sheet", "statement"]): return "REPORT"
+        # I removed "QUERY_DATA" and "MATH" from here because we want those 
+        # to fall through to the AI Brain (Step 3) automatically.
+        if any(w in text for w in ["future", "predict", "runway", "cash flow"]): return "FORECAST"
+        if any(w in text for w in ["report", "p&l", "balance sheet"]): return "REPORT"
         if any(w in text for w in ["chart", "graph", "visual"]): return "VISUALIZE"
-        if any(w in text for w in ["calculate", "math", "interest", "tax"]): return "MATH"
-        if any(w in text for w in ["scan", "read", "ingest", "upload"]): return "INGEST"
-        return "CHAT"
+        if any(w in text for w in ["scan", "ingest", "upload"]): return "INGEST"
+        return "CHAT" # Falls through to AI
 
     def continue_pending_task(self, user_text):
         self.handler.pending_task = None 

@@ -15,7 +15,7 @@ from auth import check_password
 # --- 1. CONFIG ---
 st.set_page_config(
     page_title="8law Scanner",
-    page_icon="⚖️", # The Greek symbol of balance
+    page_icon="favicon.png",
     layout="centered",
     initial_sidebar_state="collapsed"
 )

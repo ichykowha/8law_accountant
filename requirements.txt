@@ -1,6 +1,6 @@
 streamlit
 pandas
-pinecone-client
+pinecone
 google-generativeai
 pypdf
 qrcode

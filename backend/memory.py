@@ -1,56 +1,47 @@
-import sqlite3
+import json
+import os
 from datetime import datetime
 
 class AccountingMemory:
-    def __init__(self, db_name="accountant_pi.db"):
-        self.conn = sqlite3.connect(db_name, check_same_thread=False)
-        self.cursor = self.conn.cursor()
-        self._create_tables()
+    def __init__(self, db_path="chat_history.json"):
+        # We are using a JSON file now instead of SQLite
+        self.db_path = os.path.join(os.path.dirname(__file__), db_path)
+        self._initialize_file()
 
-    def _create_tables(self):
-        """Initializes the database structure."""
-        # Table for Chat History
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                user_msg TEXT,
-                ai_response TEXT
-            )
-        ''')
-        # Table for Financial Records (The 'General Ledger')
-        # I added UNIQUE(category) so the update logic below works correctly
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS financial_records (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                category TEXT UNIQUE, 
-                value REAL,
-                last_updated TEXT
-            )
-        ''')
-        self.conn.commit()
+    def _initialize_file(self):
+        """Creates the history file if it doesn't exist."""
+        if not os.path.exists(self.db_path):
+            with open(self.db_path, 'w') as f:
+                json.dump([], f)
 
-    def save_chat(self, user_msg, ai_response):
-        """Saves a conversation turn."""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.cursor.execute(
-            "INSERT INTO chat_history (timestamp, user_msg, ai_response) VALUES (?, ?, ?)",
-            (now, user_msg, ai_response)
-        )
-        self.conn.commit()
+    def save_chat(self, user_input, system_response):
+        """Saves a conversation pair to the JSON log."""
+        entry = {
+            "timestamp": str(datetime.now()),
+            "user": user_input,
+            "assistant": system_response
+        }
+        
+        try:
+            # 1. Read existing history
+            with open(self.db_path, 'r') as f:
+                history = json.load(f)
+            
+            # 2. Add new entry
+            history.append(entry)
+            
+            # 3. Save back to file
+            with open(self.db_path, 'w') as f:
+                json.dump(history, f, indent=4)
+                
+        except Exception as e:
+            print(f"Error logging chat: {e}")
 
-    def update_financial(self, category, value):
-        """Updates or inserts a financial figure."""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Upsert logic: Update if category exists, otherwise insert
-        self.cursor.execute('''
-            INSERT INTO financial_records (category, value, last_updated)
-            VALUES (?, ?, ?)
-            ON CONFLICT(category) DO UPDATE SET value=excluded.value, last_updated=excluded.last_updated
-        ''', (category, value, now))
-        self.conn.commit()
-
-    def get_recent_history(self, limit=5):
+    def get_recent_context(self, limit=5):
         """Retrieves the last few messages for context."""
-        self.cursor.execute("SELECT user_msg, ai_response FROM chat_history ORDER BY id DESC LIMIT ?", (limit,))
-        return self.cursor.fetchall()
+        try:
+            with open(self.db_path, 'r') as f:
+                history = json.load(f)
+            return history[-limit:]
+        except:
+            return []

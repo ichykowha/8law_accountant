@@ -12,7 +12,7 @@ class DataQueryAssistant:
              
         if self.api_key:
             try:
-                # Initialize Gemini 2.5 Client
+                # Initialize Gemini Client
                 self.client = genai.Client(api_key=self.api_key)
                 self.is_connected = True
             except Exception as e:
@@ -39,8 +39,10 @@ class DataQueryAssistant:
 
         # 3. Execute with Error Handling
         try:
+            # USING THE NEW MODEL: gemini-2.0-flash-exp
+            # (If this fails, we will try 'gemini-2.0-flash' or check your list again)
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash-exp", # Using the latest stable experimental model for 2026
+                model="gemini-2.0-flash-exp", 
                 contents=prompt
             )
             

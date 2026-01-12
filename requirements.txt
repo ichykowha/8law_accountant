@@ -1,7 +1,8 @@
 streamlit
 pandas
 pinecone
-google-generativeai
+google-genai
 pypdf
 qrcode
+
 Pillow

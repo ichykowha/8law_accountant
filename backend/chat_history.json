@@ -1,0 +1,22 @@
+[
+    {
+        "timestamp": "2026-01-11 18:10:42.425807",
+        "user": "hello",
+        "assistant": "Processed"
+    },
+    {
+        "timestamp": "2026-01-11 19:06:43.976615",
+        "user": "ok so whos name is on it ?",
+        "assistant": "Processed"
+    },
+    {
+        "timestamp": "2026-01-11 19:07:10.872528",
+        "user": "what was the total sp[ent on the statmrnt you just recieved ?",
+        "assistant": "Processed"
+    },
+    {
+        "timestamp": "2026-01-11 21:17:16.942343",
+        "user": "what is my month total ",
+        "assistant": "Processed"
+    }
+]

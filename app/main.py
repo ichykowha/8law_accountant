@@ -1,46 +1,82 @@
 import streamlit as st
-from google import genai
+import os
+import sys
 
-st.title("8law Model Finder v2 🕵️‍♂️")
+# Path Setup to ensure we can find the backend
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# 1. SETUP
-if "GEMINI_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_KEY"]
-    st.success("✅ API Key found.")
-else:
-    st.error("❌ No API Key.")
-    st.stop()
+from controller import PowerhouseAccountant
 
-# 2. ASK GOOGLE FOR THE LIST
-if st.button("List Available Models"):
-    try:
-        client = genai.Client(api_key=api_key)
-        
-        st.write("Contacting Google...")
-        # Get the raw list
-        all_models = list(client.models.list())
-        
-        st.write("### 📋 Models You Can Use:")
-        
-        found_flash = False
-        
-        for m in all_models:
-            # CHECK FOR THE NEW LABEL: "supported_actions"
-            # We only want models that can "generateContent" (chat)
-            if hasattr(m, 'supported_actions') and "generateContent" in m.supported_actions:
-                # Print the CLEAN name (e.g., "gemini-1.5-flash")
-                # We strip the "models/" part if it's there to make it easy to copy
-                clean_name = m.name.replace("models/", "")
-                st.code(clean_name)
-                
-                if "flash" in clean_name:
-                    found_flash = True
+# --- 1. CONFIG ---
+st.set_page_config(page_title="8law Accountant", page_icon="💰", layout="wide")
 
-        if found_flash:
-            st.success("✨ Success! Copy one of the 'flash' names above.")
-        else:
-            st.warning("No 'Flash' model found. Try 'gemini-pro'.")
+# --- 2. CSS STYLING ---
+st.markdown("""
+    <style>
+    .main { background-color: #f5f7f9; }
+    .stTextInput > div > div > input { border: 2px solid #2c3e50; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 3. INITIALIZE SYSTEM ---
+if 'accountant' not in st.session_state:
+    st.session_state.accountant = PowerhouseAccountant()
+
+# Initialize Pinecone Memory
+if 'vector_db' not in st.session_state:
+    st.session_state.vector_db = None 
+
+# --- 4. SIDEBAR (The "Office") ---
+with st.sidebar:
+    st.header("📂 Document Upload")
+    uploaded_file = st.file_uploader("Drop Bank Statements (PDF)", type="pdf")
+    
+    if uploaded_file:
+        with st.spinner("Reading document..."):
+            # Save temp file
+            temp_path = f"temp_{uploaded_file.name}"
+            with open(temp_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
             
-    except Exception as e:
-        st.error(f"Error listing models: {e}")
+            # Process
+            st.session_state.accountant.process_document(temp_path)
+            st.success("Saved to Pinecone Memory 🧠")
+            os.remove(temp_path)
 
+    st.divider()
+    st.markdown("### 📊 Status")
+    st.metric(label="System Status", value="Online", delta="Ready")
+
+# --- 5. MAIN FLOOR (The Chat) ---
+st.title("8law Super Accountant")
+st.markdown("#### *Industry Grade Financial Intelligence*")
+
+# Chat History
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# User Input
+if prompt := st.chat_input("Ask about your finances..."):
+    # Show User Message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # Get AI Response
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            response_data = st.session_state.accountant.process_input(prompt)
+            answer = response_data["answer"]
+            
+            st.markdown(answer)
+            
+            # Show Reasoning (The "Audit Trail")
+            with st.expander("View Logic & Reasoning"):
+                st.write(response_data["reasoning"])
+                
+    st.session_state.messages.append({"role": "assistant", "content": answer})
+    

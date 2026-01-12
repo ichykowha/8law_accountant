@@ -39,18 +39,18 @@ class DataQueryAssistant:
 
         # 3. Execute with Error Handling
         try:
-            # SWITCHING TO THE STABLE WORKHORSE
-            # This model has a generous free tier (15 requests/minute)
+            # --- THE STRATEGY ---
+            # We use gemini-2.5-pro because it is the SMARTEST model for accounting.
+            # If this hits a rate limit, we catch it in the exception.
             response = self.client.models.generate_content(
-                model="gemini-1.5-flash", 
+                model="gemini-2.5-pro", 
                 contents=prompt
             )
             
-            # 4. Validate Response
             if response.text:
                 return {
                     "answer": response.text,
-                    "reasoning": ["Model: Gemini 1.5 Flash", "Status: Success"]
+                    "reasoning": ["Model: Gemini 2.5 Pro", "Status: Success"]
                 }
             else:
                 return {
@@ -59,8 +59,8 @@ class DataQueryAssistant:
                 }
 
         except Exception as e:
-            # 5. Catch-All for API Errors
+            # ERROR HANDLING
             return {
                 "answer": f"⚠️ AI Provider Error: {str(e)}",
-                "reasoning": ["Crash during API Call"]
+                "reasoning": ["Crash during API Call", "Try waiting 30 seconds if this is a Rate Limit."]
             }

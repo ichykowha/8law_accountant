@@ -1,78 +1,66 @@
 import streamlit as st
 from google import genai
-from google.genai import types
 
 class DataQueryAssistant:
     def __init__(self):
-        # --- 1. CONFIGURE THE NEW BRAIN ---
+        # --- 1. SETUP CONNECTION ---
         self.is_connected = False
-        try:
-            # We access the key securely from Streamlit Secrets
-            if "GEMINI_KEY" in st.secrets:
-                self.api_key = st.secrets["GEMINI_KEY"]
+        self.api_key = None
+        
+        # Try to find the key
+        if "GEMINI_KEY" in st.secrets:
+            self.api_key = st.secrets["GEMINI_KEY"]
+        elif "google_api_key" in st.secrets:
+             self.api_key = st.secrets["google_api_key"]
+             
+        if self.api_key:
+            try:
+                # NEW 2026 SYNTAX
                 self.client = genai.Client(api_key=self.api_key)
                 self.is_connected = True
-            else:
-                print("Gemini Key not found in secrets.")
-        except Exception as e:
-            print(f"Error connecting to Gemini: {e}")
+            except Exception as e:
+                print(f"CRITICAL: Client init failed: {e}")
+        else:
+            print("CRITICAL: No API Key found in secrets.")
 
     def ask(self, user_question):
-        """Sends the question + Pinecone memories to Google's AI."""
-        
-        context_text = ""
-        source_used = "General Knowledge"
+        # --- 2. FAIL FAST IF DISCONNECTED ---
+        if not self.is_connected:
+            return {
+                "answer": "⚠️ **SYSTEM ERROR:** I cannot connect to Google. Please check that 'GEMINI_KEY' is in your Streamlit Secrets.",
+                "reasoning": ["Connection Failed", "No API Key"]
+            }
 
-        # --- 2. FETCH MEMORY FROM PINECONE ---
-        # (We keep this light for now to ensure the connection works first)
-        if 'vector_db' in st.session_state and st.session_state.vector_db is not None:
-            try:
-                # In the future, we will search for real memories here.
-                # For this test, we confirm memory is active.
-                context_text = "User has uploaded financial documents."
-                source_used = "Uploaded Documents"
-            except Exception as e:
-                context_text = f"Error reading memory: {e}"
-        
-        # --- 3. CREATE THE PROMPT ---
+        # --- 3. THE PROMPT ---
         prompt = f"""
-        You are 8law, an advanced AI Accountant.
-        
-        USER QUESTION: 
-        {user_question}
-        
-        CONTEXT:
-        {context_text}
-        
-        INSTRUCTIONS:
-        Answer the question professionally. Be concise.
+        You are 8law, an elite AI Accountant.
+        User Question: {user_question}
         """
 
-        # --- 4. GET THE ANSWER (NEW 2026 SYNTAX) ---
-        reasoning_steps = []
-        final_answer = ""
-        
-        if self.is_connected:
-            try:
-                # This uses the new Google GenAI SDK
-                response = self.client.models.generate_content(
-                    model="gemini-1.5-flash",
-                    contents=prompt
-                )
-                final_answer = response.text
-                reasoning_steps = [
-                    f"Source: {source_used}", 
-                    "AI Model: Gemini 1.5 Flash", 
-                    "Status: Success"
-                ]
-            except Exception as e:
-                final_answer = f"I encountered an error thinking about that: {str(e)}"
-                reasoning_steps = ["Connection Failed"]
-        else:
-            final_answer = "My AI Brain is not connected. Please check the API Key."
-        
-        return {
-            "answer": final_answer,
-            "reasoning": reasoning_steps
-        }
-        
+        # --- 4. CALL THE BRAIN (NEW SYNTAX) ---
+        try:
+            # This is the specific line that was 404-ing. 
+            # We now use the 'client.models' path which is the new standard.
+            response = self.client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=prompt
+            )
+            
+            if response.text:
+                return {
+                    "answer": response.text,
+                    "reasoning": ["Success", "Model: Gemini 1.5 Flash"]
+                }
+            else:
+                return {
+                    "answer": "I heard you, but my brain came up empty.",
+                    "reasoning": ["Empty Response from Google"]
+                }
+
+        except Exception as e:
+            # This will show you exactly WHY it failed on the screen
+            return {
+                "answer": f"⚠️ **API ERROR:** {str(e)}",
+                "reasoning": ["Crash during generation"]
+            }
+            

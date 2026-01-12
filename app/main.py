@@ -1,7 +1,7 @@
 import streamlit as st
 from google import genai
 
-st.title("8law Model Finder 🕵️‍♂️")
+st.title("8law Model Finder v2 🕵️‍♂️")
 
 # 1. SETUP
 if "GEMINI_KEY" in st.secrets:
@@ -16,25 +16,31 @@ if st.button("List Available Models"):
     try:
         client = genai.Client(api_key=api_key)
         
-        # This command asks Google: "What models can I use?"
         st.write("Contacting Google...")
+        # Get the raw list
         all_models = list(client.models.list())
         
-        st.write("### 📋 Models Available to You:")
+        st.write("### 📋 Models You Can Use:")
+        
         found_flash = False
         
         for m in all_models:
-            # We only care about models that generate content (chat)
-            if "generateContent" in m.supported_generation_methods:
-                st.code(m.name)  # This prints the EXACT name we need
-                if "flash" in m.name:
+            # CHECK FOR THE NEW LABEL: "supported_actions"
+            # We only want models that can "generateContent" (chat)
+            if hasattr(m, 'supported_actions') and "generateContent" in m.supported_actions:
+                # Print the CLEAN name (e.g., "gemini-1.5-flash")
+                # We strip the "models/" part if it's there to make it easy to copy
+                clean_name = m.name.replace("models/", "")
+                st.code(clean_name)
+                
+                if "flash" in clean_name:
                     found_flash = True
 
         if found_flash:
-            st.success("✨ Good news! We found a Flash model in the list above. Copy that name exactly!")
+            st.success("✨ Success! Copy one of the 'flash' names above.")
         else:
-            st.warning("No 'Flash' model found. Try using 'gemini-pro' or 'gemini-1.5-pro-latest'.")
+            st.warning("No 'Flash' model found. Try 'gemini-pro'.")
             
     except Exception as e:
         st.error(f"Error listing models: {e}")
-        
+

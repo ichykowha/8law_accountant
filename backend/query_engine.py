@@ -39,10 +39,10 @@ class DataQueryAssistant:
 
         # 3. Execute with Error Handling
         try:
-            # USING THE NEW MODEL: gemini-2.0-flash-exp
-            # (If this fails, we will try 'gemini-2.0-flash' or check your list again)
+            # SWITCHING TO THE STABLE WORKHORSE
+            # This model has a generous free tier (15 requests/minute)
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash-exp", 
+                model="gemini-1.5-flash", 
                 contents=prompt
             )
             
@@ -50,7 +50,7 @@ class DataQueryAssistant:
             if response.text:
                 return {
                     "answer": response.text,
-                    "reasoning": ["Model: Gemini 2.0 Flash", "Status: Success"]
+                    "reasoning": ["Model: Gemini 1.5 Flash", "Status: Success"]
                 }
             else:
                 return {
@@ -59,7 +59,7 @@ class DataQueryAssistant:
                 }
 
         except Exception as e:
-            # 5. Catch-All for API Errors (Returns Dict, NOT String)
+            # 5. Catch-All for API Errors
             return {
                 "answer": f"⚠️ AI Provider Error: {str(e)}",
                 "reasoning": ["Crash during API Call"]

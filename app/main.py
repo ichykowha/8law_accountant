@@ -1,44 +1,85 @@
 import streamlit as st
-from google import genai
+import os
+import sys
 
-st.title("🔑 API Key Inspector")
+# Path Setup to ensure we can find the backend
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# 1. Check for Key
-if "GEMINI_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_KEY"]
-    st.write(f"✅ Key found: ends in ...{api_key[-4:]}")
-else:
-    st.error("❌ No API Key found in secrets.")
-    st.stop()
+from controller import PowerhouseAccountant
 
-# 2. Ask Google what this Key can do
-if st.button("List My Available Models"):
-    try:
-        client = genai.Client(api_key=api_key)
-        st.info("Contacting Google's servers...")
-        
-        # Get the full list
-        all_models = list(client.models.list())
-        
-        st.write("### 📋 Models You Are Allowed To Use:")
-        
-        count = 0
-        for m in all_models:
-            # We check if the model supports "generateContent" (Chatting)
-            # We use a safe check to prevent crashing if attributes change
-            actions = getattr(m, "supported_actions", [])
+# --- 1. CONFIG ---
+st.set_page_config(page_title="8law Accountant", page_icon="💰", layout="wide")
+
+# --- 2. CSS STYLING ---
+st.markdown("""
+    <style>
+    .main { background-color: #f5f7f9; }
+    .stTextInput > div > div > input { border: 2px solid #2c3e50; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 3. INITIALIZE SYSTEM ---
+if 'accountant' not in st.session_state:
+    st.session_state.accountant = PowerhouseAccountant()
+
+# Initialize Pinecone Memory
+if 'vector_db' not in st.session_state:
+    st.session_state.vector_db = None 
+
+# --- 4. SIDEBAR (The "Office") ---
+with st.sidebar:
+    st.header("📂 Document Upload")
+    uploaded_file = st.file_uploader("Drop Bank Statements (PDF)", type="pdf")
+    
+    if uploaded_file:
+        with st.spinner("Reading document..."):
+            # Save temp file
+            temp_path = f"temp_{uploaded_file.name}"
+            with open(temp_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
             
-            if "generateContent" in actions:
-                # Clean up the name (remove 'models/' prefix)
-                clean_name = m.name.replace("models/", "")
-                st.code(clean_name)
-                count += 1
-                
-        if count == 0:
-            st.warning("Your Key connects, but has access to 0 chat models. This usually means you need to enable the 'Generative Language API' in Google Cloud Console.")
-        else:
-            st.success(f"Found {count} usable models! Copy one of the names above.")
+            # Process
+            st.session_state.accountant.process_document(temp_path)
+            st.success("Saved to Pinecone Memory 🧠")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
-    except Exception as e:
-        st.error(f"❌ Connection Failed: {str(e)}")
-        st.write("If this fails, your API Key might be invalid or revoked.")
+    st.divider()
+    st.markdown("### 📊 Status")
+    st.metric(label="System Status", value="Online", delta="Gemini 2.5 Pro")
+
+# --- 5. MAIN FLOOR (The Chat) ---
+st.title("8law Super Accountant")
+st.markdown("#### *Industry Grade Financial Intelligence*")
+
+# Chat History
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# User Input
+if prompt := st.chat_input("Ask about your finances..."):
+    # Show User Message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # Get AI Response
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            response_data = st.session_state.accountant.process_input(prompt)
+            
+            # SAFE UNPACKING
+            answer = response_data.get("answer", "⚠️ No answer provided.")
+            reasoning = response_data.get("reasoning", [])
+            
+            st.markdown(answer)
+            
+            # Show Reasoning (The "Audit Trail")
+            with st.expander("View Logic & Reasoning"):
+                st.write(reasoning)
+                
+    st.session_state.messages.append({"role": "assistant", "content": answer})

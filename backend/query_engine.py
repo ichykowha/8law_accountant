@@ -3,63 +3,62 @@ from google import genai
 
 class DataQueryAssistant:
     def __init__(self):
-        # --- 1. SETUP CONNECTION ---
         self.is_connected = False
         self.api_key = None
         
-        # Try to find the key
+        # Security Check
         if "GEMINI_KEY" in st.secrets:
             self.api_key = st.secrets["GEMINI_KEY"]
-        elif "google_api_key" in st.secrets:
-             self.api_key = st.secrets["google_api_key"]
              
         if self.api_key:
             try:
-                # NEW 2026 SYNTAX
+                # Initialize Gemini 2.5 Client
                 self.client = genai.Client(api_key=self.api_key)
                 self.is_connected = True
             except Exception as e:
-                print(f"CRITICAL: Client init failed: {e}")
+                print(f"Init Error: {e}")
         else:
-            print("CRITICAL: No API Key found in secrets.")
+            print("Config Error: GEMINI_KEY missing.")
 
     def ask(self, user_question):
-        # --- 2. FAIL FAST IF DISCONNECTED ---
+        """
+        STRICT CONTRACT: Must ALWAYS return a Dictionary { "answer": str, "reasoning": list }
+        """
+        # 1. Handle Disconnection
         if not self.is_connected:
             return {
-                "answer": "⚠️ **SYSTEM ERROR:** I cannot connect to Google. Please check that 'GEMINI_KEY' is in your Streamlit Secrets.",
-                "reasoning": ["Connection Failed", "No API Key"]
+                "answer": "⚠️ System Error: API Key missing or invalid.",
+                "reasoning": ["Connection Check Failed"]
             }
 
-        # --- 3. THE PROMPT ---
+        # 2. Prepare Prompt
         prompt = f"""
         You are 8law, an elite AI Accountant.
         User Question: {user_question}
         """
 
-        # --- 4. CALL THE BRAIN (NEW SYNTAX) ---
+        # 3. Execute with Error Handling
         try:
-            # This is the specific line that was 404-ing. 
-            # We now use the 'client.models' path which is the new standard.
             response = self.client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.0-flash-exp", # Using the latest stable experimental model for 2026
                 contents=prompt
             )
             
+            # 4. Validate Response
             if response.text:
                 return {
                     "answer": response.text,
-                    "reasoning": ["Success", "Model: Gemini 1.5 Flash"]
+                    "reasoning": ["Model: Gemini 2.0 Flash", "Status: Success"]
                 }
             else:
                 return {
-                    "answer": "I heard you, but my brain came up empty.",
-                    "reasoning": ["Empty Response from Google"]
+                    "answer": "I thought about it, but couldn't generate a response.",
+                    "reasoning": ["Empty Response Object"]
                 }
 
         except Exception as e:
-            # This will show you exactly WHY it failed on the screen
+            # 5. Catch-All for API Errors (Returns Dict, NOT String)
             return {
-                "answer": f"⚠️ **API ERROR:** {str(e)}",
-                "reasoning": ["Crash during generation"]
+                "answer": f"⚠️ AI Provider Error: {str(e)}",
+                "reasoning": ["Crash during API Call"]
             }

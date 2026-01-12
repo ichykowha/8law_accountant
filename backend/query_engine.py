@@ -10,8 +10,6 @@ class DataQueryAssistant:
         # Try to find the key
         if "GEMINI_KEY" in st.secrets:
             self.api_key = st.secrets["GEMINI_KEY"]
-        elif "google_api_key" in st.secrets:
-             self.api_key = st.secrets["google_api_key"]
              
         if self.api_key:
             try:
@@ -37,19 +35,18 @@ class DataQueryAssistant:
         User Question: {user_question}
         """
 
-        # --- 4. CALL THE BRAIN (NEW SYNTAX) ---
+        # --- 4. CALL THE BRAIN (UPDATED FOR GEMINI 2.5) ---
         try:
-            # This is the specific line that was 404-ing. 
-            # We now use the 'client.models' path which is the new standard.
+            # We use the NEW model you found!
             response = self.client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-pro",
                 contents=prompt
             )
             
             if response.text:
                 return {
                     "answer": response.text,
-                    "reasoning": ["Success", "Model: Gemini 1.5 Flash"]
+                    "reasoning": ["Success", "Model: Gemini 2.5 Pro"]
                 }
             else:
                 return {
@@ -58,7 +55,6 @@ class DataQueryAssistant:
                 }
 
         except Exception as e:
-            # This will show you exactly WHY it failed on the screen
             return {
                 "answer": f"⚠️ **API ERROR:** {str(e)}",
                 "reasoning": ["Crash during generation"]

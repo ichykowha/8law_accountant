@@ -4,5 +4,5 @@ pinecone
 google-genai
 pypdf
 qrcode
-
 Pillow
+openpyxl

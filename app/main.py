@@ -1,136 +1,46 @@
 import streamlit as st
-import sys
 import os
-import pandas as pd
-import socket
-import qrcode
-from PIL import Image
-from io import BytesIO
-from pinecone import Pinecone
-# Path Setup
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from controller import PowerhouseAccountant
-from auth import check_password
 
-# --- 1. CONFIG (The Money Icon) ---
-st.set_page_config(
-    page_title="Super Accountant",
-    page_icon="💰", # Money Bag Icon for Mobile Home Screen
-    layout="wide"
-)
+# --- BYPASS DIAGNOSTIC TOOL ---
+st.title("8law System Diagnostic 🛠️")
 
-# --- 2. SECURITY CHECK ---
-if not check_password():
-    st.stop() # Stop here if not logged in
+# 1. CHECK SECRETS
+st.write("### 1. Checking Keys...")
+if "GEMINI_KEY" in st.secrets:
+    key_status = "✅ Found GEMINI_KEY"
+    api_key = st.secrets["GEMINI_KEY"]
+else:
+    key_status = "❌ GEMINI_KEY Missing"
+    api_key = None
 
-# --- 3. INITIALIZE SYSTEM ---
-if 'accountant' not in st.session_state:
-    st.session_state.accountant = PowerhouseAccountant()
+st.write(key_status)
 
-# Initialize Pinecone Memory (Run this check separately)
-if 'vector_db' not in st.session_state:
-    try:
-        # Using your tested API key
-      # Securely access the key from Streamlit Secrets
-        pc = Pinecone(api_key=st.secrets["PINECONE_KEY"])
-        st.session_state.vector_db = pc.Index("test-index-001")
-        print("Connected to Pinecone Memory")
-    except Exception as e:
-        st.error(f"Could not connect to memory: {e}")
+# 2. CHECK LIBRARY
+st.write("### 2. Checking Google Library...")
+try:
+    from google import genai
+    st.write("✅ google-genai library installed (New 2026 Version)")
+except ImportError:
+    st.write("❌ Library missing. Update requirements.txt to include: google-genai")
+    st.stop()
 
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-
-# --- 4. SIDEBAR (Mobile & QR) ---
-with st.sidebar:
-    st.title("📂 Ingest")
-    uploaded = st.file_uploader("Upload", type=['csv','png','jpg','json','pdf'])
-    if uploaded:
-        # Save & Process
-        temp_dir = os.path.join("..", "data", "uploads")
-        if not os.path.exists(temp_dir): os.makedirs(temp_dir)
-        path = os.path.join(temp_dir, uploaded.name)
-        with open(path, "wb") as f: f.write(uploaded.getbuffer())
-        
-        st.info("Scanning...")
-        # Check if Pinecone is ready
-        v_db = st.session_state.get('vector_db', None)
-        res = st.session_state.accountant.ingestor.ingest_file(path, vector_db=v_db)
-        st.success(res)
-        # Add to Blockchain
-        st.session_state.accountant.audit.create_entry(f"Upload: {uploaded.name}", path)
-
-    st.divider()
-    
-    # QR CODE GENERATOR
-    with st.expander("📱 Mobile Access"):
+# 3. TEST CONNECTION
+st.write("### 3. Testing Brain Connection...")
+if st.button("Test Connection Now"):
+    if not api_key:
+        st.error("Cannot test without a Key.")
+    else:
         try:
-            hostname = socket.gethostname()
-            local_ip = socket.gethostbyname(hostname)
-            url = f"http://{local_ip}:8501"
-            img = qrcode.make(url)
-            st.image(img.get_image(), caption=f"Scan to open on Phone: {url}")
-        except:
-            st.warning("Could not generate QR code.")
-
-# --- 5. DASHBOARD ---
-st.title("💰 Super Accountant v2.0")
-
-# Metrics
-metrics = st.session_state.accountant.forecaster.project_balance(30)
-c1, c2, c3 = st.columns(3)
-c1.metric("Cash", f"${metrics['current_balance']}")
-c2.metric("Forecast (30d)", f"${metrics['projected_balance']}", metrics['status'])
-c3.metric("Blockchain Status", "🔒 Secured")
-
-# Charts & Audit
-tab1, tab2 = st.tabs(["📈 Cash Flow", "⛓️ Blockchain Ledger"])
-
-with tab1:
-    # We strip the "," out of the text "12,500.00" and turn it back into a number
-    raw_balance = float(metrics['current_balance'].replace(',', ''))
-    
-    chart_data = pd.DataFrame({
-        'Days': range(90), 
-        'Balance': [raw_balance + (i*20) for i in range(90)]
-    })
-    st.line_chart(chart_data, x='Days', y='Balance')
-
-with tab2:
-    st.caption("Immutable Audit Trail (SHA-256 Secured)")
-    chain_data = []
-    for block in st.session_state.accountant.audit.chain:
-        chain_data.append({
-            "Index": block.index,
-            "Hash": block.hash[:15] + "...",
-            "Prev Hash": block.previous_hash[:15] + "...",
-            "Data": str(block.data)
-        })
-    st.dataframe(pd.DataFrame(chain_data))
-
-# --- 6. INTELLIGENT CHAT ---
-st.divider()
-user_input = st.chat_input("Ask: 'How much on coffee?'")
-
-for role, msg in st.session_state.chat_history:
-    st.chat_message(role).write(msg)
-
-if user_input:
-    st.chat_message("user").write(user_input)
-    st.session_state.chat_history.append(("user", user_input))
-    
-    # Use Query Engine directly for reasoning
-    with st.chat_message("assistant"):
-        # Check if it's a data query
-        if "coffee" in user_input or "runway" in user_input:
-            result = st.session_state.accountant.query_engine.ask(user_input)
-            st.write(result['answer'])
-            with st.expander("🧠 See Reasoning"):
-                for step in result['reasoning']:
-                    st.write(f"- {step}")
-            st.session_state.chat_history.append(("assistant", result['answer']))
-        else:
-            # Fallback to general controller
-            resp = st.session_state.accountant.process_input(user_input)
-            st.write(resp)
-            st.session_state.chat_history.append(("assistant", resp))
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents="Reply with exactly three words: System is operational."
+            )
+            st.success(f"🎉 SUCCESS! The Brain Replied: '{response.text}'")
+            st.balloons()
+        except Exception as e:
+            st.error(f"💀 CONNECTION DIED: {e}")
+            st.write("Common fixes:")
+            st.write("- If error is '404', the model name might be wrong.")
+            st.write("- If error is 'Auth', the Key is wrong.")
+            

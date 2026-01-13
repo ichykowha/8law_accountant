@@ -6,42 +6,48 @@ class DataQueryAssistant:
         self.is_connected = False
         self.api_key = None
         
-        # Security Check
         if "GEMINI_KEY" in st.secrets:
             self.api_key = st.secrets["GEMINI_KEY"]
              
         if self.api_key:
             try:
-                # Initialize Gemini Client
                 self.client = genai.Client(api_key=self.api_key)
                 self.is_connected = True
             except Exception as e:
                 print(f"Init Error: {e}")
-        else:
-            print("Config Error: GEMINI_KEY missing.")
 
-    def ask(self, user_question):
+    def ask(self, user_question, history_context=None):
         """
-        STRICT CONTRACT: Must ALWAYS return a Dictionary { "answer": str, "reasoning": list }
+        Arguments:
+        - user_question: The new question
+        - history_context: A list of previous messages [{"role": "user", "content": "..."}]
         """
-        # 1. Handle Disconnection
         if not self.is_connected:
-            return {
-                "answer": "⚠️ System Error: API Key missing or invalid.",
-                "reasoning": ["Connection Check Failed"]
-            }
+            return {"answer": "⚠️ System Error: API Key missing.", "reasoning": ["Connection Check Failed"]}
 
-        # 2. Prepare Prompt
+        # 1. Format History into a script
+        history_text = ""
+        if history_context:
+            for msg in history_context[-5:]: # Keep last 5 messages to save tokens
+                role = "User" if msg["role"] == "user" else "AI"
+                history_text += f"{role}: {msg['content']}\n"
+
+        # 2. Inject History into Prompt
         prompt = f"""
         You are 8law, an elite AI Accountant.
-        User Question: {user_question}
+        
+        CONTEXT (Previous Conversation):
+        {history_text}
+        
+        CURRENT USER QUESTION:
+        {user_question}
+        
+        INSTRUCTIONS:
+        - Use the CONTEXT to answer if relevant.
+        - If the user asks about a past number/fact, use the CONTEXT to find it.
         """
 
-        # 3. Execute with Error Handling
         try:
-            # --- THE STRATEGY ---
-            # We use gemini-2.5-pro because it is the SMARTEST model for accounting.
-            # If this hits a rate limit, we catch it in the exception.
             response = self.client.models.generate_content(
                 model="gemini-2.5-pro", 
                 contents=prompt
@@ -50,17 +56,10 @@ class DataQueryAssistant:
             if response.text:
                 return {
                     "answer": response.text,
-                    "reasoning": ["Model: Gemini 2.5 Pro", "Status: Success"]
+                    "reasoning": ["Checked Memory Context", "Model: Gemini 2.5 Pro"]
                 }
             else:
-                return {
-                    "answer": "I thought about it, but couldn't generate a response.",
-                    "reasoning": ["Empty Response Object"]
-                }
+                return {"answer": "I couldn't generate a response.", "reasoning": ["Empty Response"]}
 
         except Exception as e:
-            # ERROR HANDLING
-            return {
-                "answer": f"⚠️ AI Provider Error: {str(e)}",
-                "reasoning": ["Crash during API Call", "Try waiting 30 seconds if this is a Rate Limit."]
-            }
+            return {"answer": f"⚠️ AI Provider Error: {str(e)}", "reasoning": ["Crash during API Call"]}

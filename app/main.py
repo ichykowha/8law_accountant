@@ -26,19 +26,32 @@ def init_connection():
 
 supabase = init_connection()
 
-# Helper: Load History from Cloud
+# Helper: Load History from Cloud (DEBUG VERSION)
 def load_history(username):
     if not supabase: return []
     try:
-        # Fetch messages for this user, sorted by time
+        # DEBUG SPY: Print to sidebar what we are looking for
+        with st.sidebar:
+            st.write(f"🕵️ Searching DB for user: `{username}`")
+        
+        # 1. Try to get EVERYTHING (easiest check)
         response = supabase.table("chat_history") \
-            .select("role, content") \
+            .select("*") \
             .eq("username", username) \
-            .order("created_at") \
             .execute()
+            
+        # DEBUG SPY: Print what we found
+        with st.sidebar:
+            if response.data:
+                st.success(f"✅ Found {len(response.data)} memories!")
+                # st.write(response.data) # Uncomment to see raw data
+            else:
+                st.warning("⚠️ Found 0 memories.")
+                
         return response.data
     except Exception as e:
-        print(f"Read Error: {e}")
+        with st.sidebar:
+            st.error(f"🛑 DB ERROR: {str(e)}")
         return []
 
 # Helper: Save Message to Cloud
@@ -166,4 +179,5 @@ elif st.session_state["authentication_status"]:
         # 3. Save AI Message
         st.session_state.messages.append({"role": "assistant", "content": answer})
         save_message(current_user, "assistant", answer) # <--- SAVES TO CLOUD
+
 

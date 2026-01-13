@@ -150,8 +150,10 @@ elif st.session_state["authentication_status"]:
 
     # Display History
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        # Check if keys exist, otherwise skip to prevent crash
+        if "role" in message and "content" in message:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
     # Handle New Input
     if prompt := st.chat_input("Ask about your finances..."):
@@ -179,5 +181,6 @@ elif st.session_state["authentication_status"]:
         # 3. Save AI Message
         st.session_state.messages.append({"role": "assistant", "content": answer})
         save_message(current_user, "assistant", answer) # <--- SAVES TO CLOUD
+
 
 

@@ -10,12 +10,26 @@ from controller import PowerhouseAccountant
 # --- 1. CONFIG ---
 st.set_page_config(page_title="8law Accountant", page_icon="💰", layout="wide")
 
-# --- 2. AUTHENTICATION (FROM SECRETS) ---
-# We load the config directly from the secure vault
+# --- 2. AUTHENTICATION (SECURE & MUTABLE) ---
+
+# HELPER: Converts Read-Only Secrets to Editable Dict
+def get_mutable_config():
+    # This copies the data so the library can modify it without crashing
+    secrets = st.secrets
+    return {
+        "credentials": {
+            "usernames": {
+                u: dict(d) for u, d in secrets["credentials"]["usernames"].items()
+            }
+        },
+        "cookie": dict(secrets["cookie"]),
+        "preauthorized": dict(secrets["preauthorized"])
+    }
+
 try:
-    config = st.secrets
-except FileNotFoundError:
-    st.error("⚠️ Security Error: Secrets not found.")
+    config = get_mutable_config()
+except Exception as e:
+    st.error(f"⚠️ Security Error: Could not load secrets. {e}")
     st.stop()
 
 authenticator = stauth.Authenticate(
@@ -32,12 +46,14 @@ elif st.session_state["authentication_status"] is False:
     authenticator.login()
     st.error('Username/password is incorrect')
 
-# --- 3. THE SECURE APP ---
+# --- 3. THE SECURE APP (LOGGED IN ONLY) ---
 if st.session_state["authentication_status"]:
     
     # Sidebar Logout
     with st.sidebar:
-        st.write(f"Welcome, *{st.session_state['name']}*")
+        # We use the 'name' from the specific user who logged in
+        user_name = config['credentials']['usernames'][st.session_state["username"]]['name']
+        st.write(f"Welcome, *{user_name}*")
         authenticator.logout('Logout', 'main')
         st.divider()
 
@@ -47,7 +63,7 @@ if st.session_state["authentication_status"]:
     if 'vector_db' not in st.session_state:
         st.session_state.vector_db = None 
 
-    # --- SIDEBAR ---
+    # --- SIDEBAR WORKSPACE ---
     with st.sidebar:
         st.header("📂 Document Upload")
         uploaded_file = st.file_uploader("Drop Bank Statements (PDF)", type="pdf")
@@ -66,7 +82,7 @@ if st.session_state["authentication_status"]:
         st.divider()
         st.metric(label="System Status", value="Online", delta="Gemini 2.5 Pro")
 
-    # --- CHAT INTERFACE ---
+    # --- MAIN FLOOR ---
     st.title("8law Super Accountant")
     st.markdown("#### *Industry Grade Financial Intelligence*")
 

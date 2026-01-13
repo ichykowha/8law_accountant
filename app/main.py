@@ -10,11 +10,8 @@ from controller import PowerhouseAccountant
 # --- 1. CONFIG ---
 st.set_page_config(page_title="8law Accountant", page_icon="💰", layout="wide")
 
-# --- 2. AUTHENTICATION (SECURE & MUTABLE) ---
-
-# HELPER: Converts Read-Only Secrets to Editable Dict
+# --- 2. AUTHENTICATION ---
 def get_mutable_config():
-    # This copies the data so the library can modify it without crashing
     secrets = st.secrets
     return {
         "credentials": {
@@ -39,19 +36,23 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# Login Widget
-if st.session_state.get("authentication_status") is None:
-    authenticator.login()
-elif st.session_state["authentication_status"] is False:
-    authenticator.login()
-    st.error('Username/password is incorrect')
-
-# --- 3. THE SECURE APP (LOGGED IN ONLY) ---
-if st.session_state["authentication_status"]:
+# --- 3. THE CENTERED LOGIN SCREEN ---
+if st.session_state.get("authentication_status") is None or st.session_state["authentication_status"] is False:
+    # We use 3 columns to squeeze the login box into the middle
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.header("🔐 8law Secure Login")
+        authenticator.login()
+        
+        if st.session_state["authentication_status"] is False:
+            st.error('❌ Username/password is incorrect')
+            
+# --- 4. THE SECURE APP (LOGGED IN ONLY) ---
+elif st.session_state["authentication_status"]:
     
     # Sidebar Logout
     with st.sidebar:
-        # We use the 'name' from the specific user who logged in
         user_name = config['credentials']['usernames'][st.session_state["username"]]['name']
         st.write(f"Welcome, *{user_name}*")
         authenticator.logout('Logout', 'main')

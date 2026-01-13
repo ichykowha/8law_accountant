@@ -11,9 +11,7 @@ from controller import PowerhouseAccountant
 # --- 1. CONFIG ---
 st.set_page_config(page_title="8law Accountant", page_icon="💰", layout="wide")
 
-# --- 2. SETUP DATABASE & AUTH ---
-
-# Initialize Database Connection
+# --- 2. SETUP DATABASE ---
 @st.cache_resource
 def init_connection():
     try:
@@ -21,38 +19,35 @@ def init_connection():
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
     except Exception as e:
+        st.error(f"❌ Database Init Error: {e}")
         return None
 
 supabase = init_connection()
 
-# Helper: Load History from Cloud
+# Helper: Load History with Diagnostics
 def load_history(username):
     if not supabase: return []
     try:
-        # Fetch messages for this user
         response = supabase.table("chat_history") \
             .select("*") \
             .eq("username", username) \
             .order("created_at") \
             .execute()
         return response.data
-    except Exception:
+    except Exception as e:
+        st.error(f"❌ Load History Error: {e}")
         return []
 
-# Helper: Save Message to Cloud
+# Helper: Save Message
 def save_message(username, role, content):
     if not supabase: return
     try:
-        data = {
-            "username": username,
-            "role": role,
-            "content": content
-        }
+        data = {"username": username, "role": role, "content": content}
         supabase.table("chat_history").insert(data).execute()
     except Exception as e:
-        print(f"Write Error: {e}")
+        st.error(f"❌ Save Error: {e}")
 
-# Helper: Get Editable Config for Auth
+# --- 3. AUTH CONFIG ---
 def get_mutable_config():
     secrets = st.secrets
     return {
@@ -67,18 +62,19 @@ def get_mutable_config():
 
 try:
     config = get_mutable_config()
+    authenticator = stauth.Authenticate(
+        config['credentials'],
+        config['cookie']['name'],
+        config['cookie']['key'],
+        config['cookie']['expiry_days']
+    )
 except Exception as e:
-    st.error(f"⚠️ Security Error: Could not load secrets. {e}")
+    st.error(f"Auth Error: {e}")
     st.stop()
 
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days']
-)
+# --- 4. APP INTERFACE ---
 
-# --- 3. LOGIN SCREEN ---
+# Login Screen
 if st.session_state.get("authentication_status") is None or st.session_state["authentication_status"] is False:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -87,79 +83,70 @@ if st.session_state.get("authentication_status") is None or st.session_state["au
         if st.session_state["authentication_status"] is False:
             st.error('❌ Username/password is incorrect')
 
-# --- 4. THE MAIN APP ---
+# Main App (Logged In)
 elif st.session_state["authentication_status"]:
-    
     current_user = st.session_state["username"]
     
-    # Sidebar
+    # --- DIAGNOSTIC SIDEBAR ---
     with st.sidebar:
-        user_real_name = config['credentials']['usernames'][current_user]['name']
-        st.write(f"Welcome, *{user_real_name}*")
+        st.write(f"User: **{current_user}**")
         authenticator.logout('Logout', 'main')
         st.divider()
+        
+        # Test Database Connection visibly
+        st.subheader("🔍 Diagnostics")
+        if supabase:
+            st.success("✅ Database Connected")
+            # Count rows for this user
+            test_rows = load_history(current_user)
+            st.info(f"📂 Memories found: {len(test_rows)}")
+        else:
+            st.error("❌ Database Disconnected")
 
-        # Initialize Accountant Logic
+        # Initialize Logic
         if 'accountant' not in st.session_state:
             st.session_state.accountant = PowerhouseAccountant()
-        
-        # Document Uploader
-        st.header("📂 Document Upload")
-        uploaded_file = st.file_uploader("Drop Bank Statements (PDF)", type="pdf")
-        
-        if uploaded_file:
-            with st.spinner("Reading document..."):
-                temp_path = f"temp_{uploaded_file.name}"
-                with open(temp_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                st.session_state.accountant.process_document(temp_path)
-                st.success("Saved to Pinecone Memory 🧠")
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
 
-        st.divider()
-        st.metric(label="System Status", value="Online", delta="Gemini 2.5 Pro")
-        st.metric(label="Database", value="Connected", delta="Supabase")
-
-    # --- CHAT INTERFACE ---
+    # --- MAIN CHAT AREA ---
     st.title("8law Super Accountant")
-    st.markdown("#### *Industry Grade Financial Intelligence*")
 
-    # LOAD HISTORY (Only once per session)
+    # LOAD HISTORY (The fix for missing bubbles)
     if "messages" not in st.session_state:
-        with st.spinner("Loading memory..."):
-            db_history = load_history(current_user)
-            st.session_state.messages = db_history if db_history else []
+        st.session_state.messages = load_history(current_user)
 
-    # Display History
+    # DISPLAY HISTORY
     for message in st.session_state.messages:
         if "role" in message and "content" in message:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # Handle New Input
+    # HANDLE INPUT
     if prompt := st.chat_input("Ask about your finances..."):
-        # 1. Show & Save User Message
+        # User Message
         with st.chat_message("user"):
             st.markdown(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt})
         save_message(current_user, "user", prompt)
 
-        # 2. Generate AI Response
+        # AI Response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Pass history to Brain
+                # Grab history for context
                 history = st.session_state.messages[:-1]
+                
+                # --- VISUAL PROOF OF MEMORY ---
+                st.info(f"🧠 I am reading {len(history)} previous messages as context.")
+                # ------------------------------
+
                 response_data = st.session_state.accountant.process_input(prompt, history)
                 
                 answer = response_data.get("answer", "⚠️ No answer provided.")
                 reasoning = response_data.get("reasoning", [])
                 
                 st.markdown(answer)
-                with st.expander("View Logic & Reasoning"):
+                with st.expander("View Logic"):
                     st.write(reasoning)
         
-        # 3. Save AI Message
+        # Save AI Message
         st.session_state.messages.append({"role": "assistant", "content": answer})
         save_message(current_user, "assistant", answer)

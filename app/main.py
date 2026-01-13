@@ -6,7 +6,13 @@ from supabase import create_client, Client
 
 # Path Setup
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from controller import PowerhouseAccountant
+
+# Try to import Controller (with error handling)
+try:
+    from controller import PowerhouseAccountant
+except ImportError as e:
+    st.error(f"⚠️ Critical System Error: Could not import Controller. {e}")
+    st.stop()
 
 # --- 1. CONFIG ---
 st.set_page_config(page_title="8law Accountant", page_icon="💰", layout="wide")
@@ -18,13 +24,12 @@ def init_connection():
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
-    except Exception as e:
-        st.error(f"❌ Database Init Error: {e}")
+    except Exception:
         return None
 
 supabase = init_connection()
 
-# Helper: Load History with Diagnostics
+# Helper: Load History
 def load_history(username):
     if not supabase: return []
     try:
@@ -34,8 +39,7 @@ def load_history(username):
             .order("created_at") \
             .execute()
         return response.data
-    except Exception as e:
-        st.error(f"❌ Load History Error: {e}")
+    except Exception:
         return []
 
 # Helper: Save Message
@@ -44,8 +48,8 @@ def save_message(username, role, content):
     try:
         data = {"username": username, "role": role, "content": content}
         supabase.table("chat_history").insert(data).execute()
-    except Exception as e:
-        st.error(f"❌ Save Error: {e}")
+    except Exception:
+        pass
 
 # --- 3. AUTH CONFIG ---
 def get_mutable_config():
@@ -87,40 +91,54 @@ if st.session_state.get("authentication_status") is None or st.session_state["au
 elif st.session_state["authentication_status"]:
     current_user = st.session_state["username"]
     
-    # --- DIAGNOSTIC SIDEBAR ---
+    # Sidebar
     with st.sidebar:
-        st.write(f"User: **{current_user}**")
+        user_real_name = config['credentials']['usernames'][current_user]['name']
+        st.write(f"Welcome, *{user_real_name}*")
         authenticator.logout('Logout', 'main')
         st.divider()
         
-        # Test Database Connection visibly
-        st.subheader("🔍 Diagnostics")
-        if supabase:
-            st.success("✅ Database Connected")
-            # Count rows for this user
-            test_rows = load_history(current_user)
-            st.info(f"📂 Memories found: {len(test_rows)}")
-        else:
-            st.error("❌ Database Disconnected")
-
         # Initialize Logic
         if 'accountant' not in st.session_state:
-            st.session_state.accountant = PowerhouseAccountant()
+            try:
+                st.session_state.accountant = PowerhouseAccountant()
+            except Exception as e:
+                st.error(f"⚠️ Brain Error: {e}")
+            
+        # Document Upload
+        st.header("📂 Document Upload")
+        uploaded_file = st.file_uploader("Drop Bank Statements (PDF)", type="pdf")
+        
+        if uploaded_file and 'accountant' in st.session_state:
+            with st.spinner("Processing..."):
+                temp_path = f"temp_{uploaded_file.name}"
+                with open(temp_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                
+                # Call the Librarian
+                status = st.session_state.accountant.process_document(temp_path)
+                st.success(status)
+                
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        
+        st.divider()
+        st.caption("System Online | Encrypted")
 
     # --- MAIN CHAT AREA ---
     st.title("8law Super Accountant")
 
-    # LOAD HISTORY (The fix for missing bubbles)
+    # Load History (Once)
     if "messages" not in st.session_state:
         st.session_state.messages = load_history(current_user)
 
-    # DISPLAY HISTORY
+    # Display History
     for message in st.session_state.messages:
         if "role" in message and "content" in message:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # HANDLE INPUT
+    # Handle Input
     if prompt := st.chat_input("Ask about your finances..."):
         # User Message
         with st.chat_message("user"):
@@ -131,22 +149,22 @@ elif st.session_state["authentication_status"]:
         # AI Response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Grab history for context
                 history = st.session_state.messages[:-1]
                 
-                # --- VISUAL PROOF OF MEMORY ---
-                st.info(f"🧠 I am reading {len(history)} previous messages as context.")
-                # ------------------------------
-
-                response_data = st.session_state.accountant.process_input(prompt, history)
-                
-                answer = response_data.get("answer", "⚠️ No answer provided.")
-                reasoning = response_data.get("reasoning", [])
-                
-                st.markdown(answer)
-                with st.expander("View Logic"):
-                    st.write(reasoning)
+                # Check if accountant is ready
+                if 'accountant' in st.session_state:
+                    response_data = st.session_state.accountant.process_input(prompt, history)
+                    
+                    answer = response_data.get("answer", "⚠️ No answer provided.")
+                    reasoning = response_data.get("reasoning", [])
+                    
+                    st.markdown(answer)
+                    with st.expander("View Logic"):
+                        st.write(reasoning)
+                else:
+                    st.error("⚠️ AI is offline. Check sidebar for errors.")
         
         # Save AI Message
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-        save_message(current_user, "assistant", answer)
+        if 'answer' in locals():
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+            save_message(current_user, "assistant", answer)

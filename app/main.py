@@ -1,7 +1,5 @@
 import streamlit as st
 import streamlit_authenticator as stauth
-import yaml
-from yaml.loader import SafeLoader
 import os
 import sys
 
@@ -12,18 +10,14 @@ from controller import PowerhouseAccountant
 # --- 1. CONFIG ---
 st.set_page_config(page_title="8law Accountant", page_icon="💰", layout="wide")
 
-# --- 2. LOAD CONFIGURATION ---
-# We look for config.yaml in the main directory
-config_path = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
-
+# --- 2. AUTHENTICATION (FROM SECRETS) ---
+# We load the config directly from the secure vault
 try:
-    with open(config_path) as file:
-        config = yaml.load(file, Loader=SafeLoader)
+    config = st.secrets
 except FileNotFoundError:
-    st.error("⚠️ Security Error: config.yaml not found.")
+    st.error("⚠️ Security Error: Secrets not found.")
     st.stop()
 
-# --- 3. AUTHENTICATION SETUP ---
 authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],
@@ -31,33 +25,29 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# This draws the login widget
-# We ask it to return the status (True/False)
+# Login Widget
 if st.session_state.get("authentication_status") is None:
-    # First run, show login
     authenticator.login()
 elif st.session_state["authentication_status"] is False:
-    # Failed run
     authenticator.login()
     st.error('Username/password is incorrect')
 
-# --- 4. THE GATEKEEPER ---
+# --- 3. THE SECURE APP ---
 if st.session_state["authentication_status"]:
-    # === ONLY RUN THIS IF LOGGED IN ===
     
-    # Logout Button (Sidebar)
+    # Sidebar Logout
     with st.sidebar:
         st.write(f"Welcome, *{st.session_state['name']}*")
         authenticator.logout('Logout', 'main')
         st.divider()
 
-    # --- INITIALIZE SYSTEM ---
+    # Initialize System
     if 'accountant' not in st.session_state:
         st.session_state.accountant = PowerhouseAccountant()
     if 'vector_db' not in st.session_state:
         st.session_state.vector_db = None 
 
-    # --- SIDEBAR WORKSPACE ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.header("📂 Document Upload")
         uploaded_file = st.file_uploader("Drop Bank Statements (PDF)", type="pdf")
@@ -76,7 +66,7 @@ if st.session_state["authentication_status"]:
         st.divider()
         st.metric(label="System Status", value="Online", delta="Gemini 2.5 Pro")
 
-    # --- MAIN FLOOR ---
+    # --- CHAT INTERFACE ---
     st.title("8law Super Accountant")
     st.markdown("#### *Industry Grade Financial Intelligence*")
 
@@ -107,5 +97,3 @@ if st.session_state["authentication_status"]:
                     st.write(reasoning)
                     
         st.session_state.messages.append({"role": "assistant", "content": answer})
-
-# === END OF SECURE ZONE ===

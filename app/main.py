@@ -21,37 +21,22 @@ def init_connection():
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
     except Exception as e:
-        st.error("⚠️ Database Config Missing.")
         return None
 
 supabase = init_connection()
 
-# Helper: Load History from Cloud (DEBUG VERSION)
+# Helper: Load History from Cloud
 def load_history(username):
     if not supabase: return []
     try:
-        # DEBUG SPY: Print to sidebar what we are looking for
-        with st.sidebar:
-            st.write(f"🕵️ Searching DB for user: `{username}`")
-        
-        # 1. Try to get EVERYTHING (easiest check)
+        # Fetch messages for this user
         response = supabase.table("chat_history") \
             .select("*") \
             .eq("username", username) \
+            .order("created_at") \
             .execute()
-            
-        # DEBUG SPY: Print what we found
-        with st.sidebar:
-            if response.data:
-                st.success(f"✅ Found {len(response.data)} memories!")
-                # st.write(response.data) # Uncomment to see raw data
-            else:
-                st.warning("⚠️ Found 0 memories.")
-                
         return response.data
-    except Exception as e:
-        with st.sidebar:
-            st.error(f"🛑 DB ERROR: {str(e)}")
+    except Exception:
         return []
 
 # Helper: Save Message to Cloud
@@ -143,14 +128,12 @@ elif st.session_state["authentication_status"]:
 
     # LOAD HISTORY (Only once per session)
     if "messages" not in st.session_state:
-        # Pull from Database
         with st.spinner("Loading memory..."):
             db_history = load_history(current_user)
             st.session_state.messages = db_history if db_history else []
 
     # Display History
     for message in st.session_state.messages:
-        # Check if keys exist, otherwise skip to prevent crash
         if "role" in message and "content" in message:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
@@ -161,13 +144,12 @@ elif st.session_state["authentication_status"]:
         with st.chat_message("user"):
             st.markdown(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt})
-        save_message(current_user, "user", prompt) # <--- SAVES TO CLOUD
+        save_message(current_user, "user", prompt)
 
-      # 2. Generate AI Response
+        # 2. Generate AI Response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # We pass the existing chat history to the brain
-                # [:-1] prevents passing the message we just added (duplication check)
+                # Pass history to Brain
                 history = st.session_state.messages[:-1]
                 response_data = st.session_state.accountant.process_input(prompt, history)
                 
@@ -180,7 +162,4 @@ elif st.session_state["authentication_status"]:
         
         # 3. Save AI Message
         st.session_state.messages.append({"role": "assistant", "content": answer})
-        save_message(current_user, "assistant", answer) # <--- SAVES TO CLOUD
-
-
-
+        save_message(current_user, "assistant", answer)

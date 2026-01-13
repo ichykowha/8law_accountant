@@ -6,3 +6,5 @@ pypdf
 qrcode
 Pillow
 openpyxl
+streamlit-authenticator
+PyYAML

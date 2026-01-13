@@ -148,10 +148,13 @@ elif st.session_state["authentication_status"]:
         st.session_state.messages.append({"role": "user", "content": prompt})
         save_message(current_user, "user", prompt) # <--- SAVES TO CLOUD
 
-        # 2. Generate AI Response
+      # 2. Generate AI Response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                response_data = st.session_state.accountant.process_input(prompt)
+                # We pass the existing chat history to the brain
+                # [:-1] prevents passing the message we just added (duplication check)
+                history = st.session_state.messages[:-1]
+                response_data = st.session_state.accountant.process_input(prompt, history)
                 
                 answer = response_data.get("answer", "⚠️ No answer provided.")
                 reasoning = response_data.get("reasoning", [])
@@ -163,3 +166,4 @@ elif st.session_state["authentication_status"]:
         # 3. Save AI Message
         st.session_state.messages.append({"role": "assistant", "content": answer})
         save_message(current_user, "assistant", answer) # <--- SAVES TO CLOUD
+

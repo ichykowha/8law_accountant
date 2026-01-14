@@ -98,6 +98,48 @@ elif st.session_state["authentication_status"]:
         st.write(f"Welcome, *{user_real_name}*")
         authenticator.logout('Logout', 'main')
         st.divider()
+        
+        if 'accountant' not in st.session_state:
+            try:
+                st.session_state.accountant = PowerhouseAccountant()
+            except Exception:
+                pass
+        
+        # --- TABS FOR UPLOAD ---
+        st.header("📂 Data Ingestion")
+        tab1, tab2 = st.tabs(["My Files", "Tax Library"])
+        
+        # TAB 1: USER DATA (Bank Statements)
+        with tab1:
+            uploaded_file = st.file_uploader("Upload Bank/Receipts", type="pdf", key="user_upload")
+            if uploaded_file and 'accountant' in st.session_state:
+                with st.spinner("Reading Financials..."):
+                    temp_path = f"temp_{uploaded_file.name}"
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Upload as "financial"
+                    status = st.session_state.accountant.process_document(temp_path, current_user, doc_type="financial")
+                    st.success(status)
+                    if os.path.exists(temp_path): os.remove(temp_path)
+
+        # TAB 2: TAX LIBRARY (Textbooks/Law)
+        with tab2:
+            st.info("Upload Tax Acts, Guides, or Accounting Textbooks here.")
+            lib_file = st.file_uploader("Upload Knowledge", type="pdf", key="lib_upload")
+            if lib_file and 'accountant' in st.session_state:
+                with st.spinner("Ingesting Knowledge Base..."):
+                    temp_path = f"temp_{lib_file.name}"
+                    with open(temp_path, "wb") as f:
+                        f.write(lib_file.getbuffer())
+                    
+                    # Upload as "library"
+                    status = st.session_state.accountant.process_document(temp_path, current_user, doc_type="library")
+                    st.success(status)
+                    if os.path.exists(temp_path): os.remove(temp_path)
+
+        st.divider()
+        # ... (Keep the Report/Download buttons here if you have them)
     # --- 1. IDENTITY SELECTOR (NEW) 👔 ---
         st.header("🏢 Tax Profile")
         entity_type = st.radio(
@@ -208,4 +250,5 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
+
 

@@ -2,12 +2,13 @@ import streamlit as st
 import streamlit_authenticator as stauth
 import os
 import sys
+import pandas as pd  # <--- NEW: For Excel/CSV
 from supabase import create_client, Client
 
 # Path Setup
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Try to import Controller (with error handling)
+# Try to import Controller
 try:
     from controller import PowerhouseAccountant
 except ImportError as e:
@@ -91,7 +92,7 @@ if st.session_state.get("authentication_status") is None or st.session_state["au
 elif st.session_state["authentication_status"]:
     current_user = st.session_state["username"]
     
-    # Sidebar
+    # --- SIDEBAR ---
     with st.sidebar:
         user_real_name = config['credentials']['usernames'][current_user]['name']
         st.write(f"Welcome, *{user_real_name}*")
@@ -105,7 +106,7 @@ elif st.session_state["authentication_status"]:
             except Exception as e:
                 st.error(f"⚠️ Brain Error: {e}")
             
-        # Document Upload
+        # 1. DOCUMENT UPLOAD
         st.header("📂 Document Upload")
         uploaded_file = st.file_uploader("Drop Bank Statements (PDF)", type="pdf")
         
@@ -115,13 +116,40 @@ elif st.session_state["authentication_status"]:
                 with open(temp_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 
-                # Call the Librarian
+                # Call Librarian
                 status = st.session_state.accountant.process_document(temp_path, current_user)
                 st.success(status)
                 
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
         
+        st.divider()
+
+        # 2. DATA EXPORT (NEW!) 📉
+        st.header("📊 Reports")
+        if st.button("🔄 Refresh Data"):
+            st.rerun()
+
+        # Fetch data from Supabase for the download button
+        try:
+            response = supabase.table("transactions").select("*").eq("username", current_user).execute()
+            df = pd.DataFrame(response.data)
+            
+            if not df.empty:
+                st.caption(f"Found {len(df)} transactions.")
+                csv = df.to_csv(index=False).encode('utf-8')
+                
+                st.download_button(
+                    label="📥 Download as CSV",
+                    data=csv,
+                    file_name="8law_transactions.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.caption("No transactions found yet.")
+        except Exception as e:
+            st.error("DB Error")
+
         st.divider()
         st.caption("System Online | Encrypted")
 
@@ -151,7 +179,6 @@ elif st.session_state["authentication_status"]:
             with st.spinner("Thinking..."):
                 history = st.session_state.messages[:-1]
                 
-                # Check if accountant is ready
                 if 'accountant' in st.session_state:
                     response_data = st.session_state.accountant.process_input(prompt, history)
                     
@@ -162,10 +189,9 @@ elif st.session_state["authentication_status"]:
                     with st.expander("View Logic"):
                         st.write(reasoning)
                 else:
-                    st.error("⚠️ AI is offline. Check sidebar for errors.")
+                    st.error("⚠️ AI is offline.")
         
         # Save AI Message
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
-

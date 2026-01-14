@@ -53,10 +53,11 @@ class DataQueryAssistant:
             for i, data in enumerate(user_data_found):
                 context_text += f"{i+1}. {data}\n"
 
-        # 3. Construct the "Consultant" Prompt
-        # We check the user's entity type from the session (passed via arguments ideally, but we can instruct the AI to ask)
+        # 3. Construct the "Context-Aware" Prompt
         prompt = f"""
         You are 8law, an elite AI Accountant and Tax Consultant.
+        
+        CURRENT ENTITY PROFILE: {st.session_state.get('entity_type', 'Unknown')}
         
         YOUR KNOWLEDGE BASE:
         {context_text}
@@ -68,13 +69,16 @@ class DataQueryAssistant:
         {user_question}
         
         INSTRUCTIONS:
-        1. **Analyze the User's Data:** Look at the 'USER FINANCIAL RECORDS' to see what they actually spent or earned.
-        2. **Apply the Law:** Look at the 'RELEVANT TAX LAWS' to determine tax treatment (deductible, taxable, etc.).
-        3. **Cite Your Sources:** When you use a rule, say "According to the Tax Act..." or "Based on the guide...".
-        4. **Be Conservative:** If the law is unclear or missing, advise the user to consult a human CPA. Do not invent laws.
-        5. **Context:** If the user is a Corporation vs Sole Proprietor, apply the rules differently if the text distinguishes them.
+        1. **Check the Entity Type:**
+           - If 'Personal': Focus on T1 General, T4s, and personal credits.
+           - If 'Corporation': Focus on T2 returns, shareholder loans, and dividends.
+           - If 'Non-Profit / Charity': Focus on NPO rules (T1044), non-taxable status, and fund restrictions. Do NOT give advice on 'maximizing profit'.
+           
+        2. **Analyze the Data:** Look at 'USER FINANCIAL RECORDS' for facts.
+        3. **Apply the Law:** Look at 'RELEVANT TAX LAWS' for the rules.
+        4. **Cite Sources:** explicitly mention specific Tax Act sections or Guides found in the library.
         
-        Answer professionally but clearly.
+        Answer professionally.
         """
 
         try:
@@ -100,3 +104,4 @@ class DataQueryAssistant:
 
         except Exception as e:
             return {"answer": f"⚠️ AI Provider Error: {str(e)}", "reasoning": ["Crash during API Call"]}
+

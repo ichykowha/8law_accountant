@@ -7,24 +7,18 @@ class PowerhouseAccountant:
         self.query_engine = DataQueryAssistant()
         self.librarian = DocumentLibrarian()
 
-    def process_document(self, file_path):
-        # 1. Get the filename
+    def process_document(self, file_path, username="admin"):
+        # 1. Get filename
         import os
         file_name = os.path.basename(file_path)
         
-        # 2. Hand it to the Librarian
-        status = self.librarian.upload_document(file_path, file_name)
+        # 2. Hand to Librarian (Now with Username!)
+        status = self.librarian.upload_document(file_path, file_name, username)
         return status
 
     def process_input(self, user_text, history=[]):
-        """
-        Full RAG Pipeline:
-        1. Search Memory (Pinecone) for clues.
-        2. Pass Clues + History + Question to Brain (Gemini).
-        """
-        
-        # 1. Search for relevant facts in the documents
+        # 1. Search Memory
         clues = self.librarian.search_memory(user_text)
         
-        # 2. Hand everything to the Brain
+        # 2. Ask Brain
         return self.query_engine.ask(user_text, history_context=history, document_clues=clues)

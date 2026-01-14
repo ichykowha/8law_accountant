@@ -140,15 +140,14 @@ elif st.session_state["authentication_status"]:
 
         st.divider()
         # ... (Keep the Report/Download buttons here if you have them)
-    # --- 1. IDENTITY SELECTOR (NEW) 👔 ---
+    # --- 1. IDENTITY SELECTOR 👔 ---
         st.header("🏢 Tax Profile")
         entity_type = st.radio(
             "I am acting as:",
-            ["Personal", "Small Business (Sole Prop)", "Corporation"],
+            ["Personal", "Small Business (Sole Prop)", "Corporation", "Non-Profit / Charity"],
             index=0,
-            help="This determines which Tax Rules 8law will apply to your documents."
+            help="This tells 8law which CRA Tax Rules apply (e.g., T2 vs T1044)."
         )
-        
         # Save this choice so the Brain knows
         st.session_state["entity_type"] = entity_type
         st.info(f"Applying **{entity_type}** Tax Rules.")
@@ -250,5 +249,6 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
+
 
 

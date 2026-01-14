@@ -7,12 +7,13 @@ class PowerhouseAccountant:
         self.query_engine = DataQueryAssistant()
         self.librarian = DocumentLibrarian()
 
+    # The fix is here: We added 'username="admin"' so it accepts the name
     def process_document(self, file_path, username="admin"):
         # 1. Get filename
         import os
         file_name = os.path.basename(file_path)
         
-        # 2. Hand to Librarian (Now with Username!)
+        # 2. Hand to Librarian (Pass the username along!)
         status = self.librarian.upload_document(file_path, file_name, username)
         return status
 

@@ -116,7 +116,7 @@ elif st.session_state["authentication_status"]:
                     f.write(uploaded_file.getbuffer())
                 
                 # Call the Librarian
-                status = st.session_state.accountant.process_document(temp_path)
+                status = st.session_state.accountant.process_document(temp_path, current_user)
                 st.success(status)
                 
                 if os.path.exists(temp_path):
@@ -168,3 +168,4 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
+

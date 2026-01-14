@@ -98,6 +98,19 @@ elif st.session_state["authentication_status"]:
         st.write(f"Welcome, *{user_real_name}*")
         authenticator.logout('Logout', 'main')
         st.divider()
+    # --- 1. IDENTITY SELECTOR (NEW) 👔 ---
+        st.header("🏢 Tax Profile")
+        entity_type = st.radio(
+            "I am acting as:",
+            ["Personal", "Small Business (Sole Prop)", "Corporation"],
+            index=0,
+            help="This determines which Tax Rules 8law will apply to your documents."
+        )
+        
+        # Save this choice so the Brain knows
+        st.session_state["entity_type"] = entity_type
+        st.info(f"Applying **{entity_type}** Tax Rules.")
+        st.divider()
         
         # Initialize Logic
         if 'accountant' not in st.session_state:
@@ -195,3 +208,4 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
+

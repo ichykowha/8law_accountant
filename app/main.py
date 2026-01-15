@@ -191,21 +191,30 @@ elif st.session_state["authentication_status"]:
         except Exception:
             pass
 
-        # 3. TRANSACTIONS (Bank) 💳
+        # 3. TRANSACTIONS (Auto-Audited) 💳
         try:
             response = supabase.table("transactions").select("*").eq("username", current_user).execute()
             df = pd.DataFrame(response.data)
+            
             if not df.empty:
-                st.caption(f"💳 {len(df)} Transactions")
+                st.write("---")
+                st.caption(f"💳 {len(df)} Transactions Processed")
+                
+                # Calculate the "Real" Tax Write-off
+                if 'deductible_percent' in df.columns:
+                    # Logic: Amount * (Percent / 100)
+                    df['write_off_value'] = df['amount'] * (df['deductible_percent'] / 100)
+                    total_write_off = df['write_off_value'].sum()
+                    
+                    st.metric("💰 Total Tax Write-off", f"${total_write_off:,.2f}", help="Calculated based on CRA rules (e.g., 50% for meals)")
+                
                 csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download Expenses", csv, "8law_transactions.csv", "text/csv")
+                st.download_button("📥 Download Audited CSV", csv, "8law_audited.csv", "text/csv")
             else:
                 st.caption("No financial data found.")
         except Exception:
             pass
-
-        st.caption("System Online | Encrypted")
-
+            
     # --- MAIN CHAT AREA ---
     st.title("8law Super Accountant")
 
@@ -248,3 +257,4 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
+

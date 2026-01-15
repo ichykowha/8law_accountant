@@ -35,6 +35,18 @@ class DocumentLibrarian:
                 model="models/text-embedding-004",
                 contents=text
             )
+    def read_xml_file(self, file_path):
+    """Reads a massive XML file safely."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            # We use 'lxml' because it is fast enough for big files
+            soup = BeautifulSoup(f, "xml")
+
+            # Extract all text, separating tags with spaces
+            text = soup.get_text(separator="\n")
+            return text
+    except Exception as e:
+        return None
             return result.embeddings[0].values
         except Exception:
             return None

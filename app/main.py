@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit_authenticator as stauth
 import os
 import sys
-import shutil # <--- NEW: For moving files to the vault
+import shutil 
 import pandas as pd
 from supabase import create_client, Client
 
@@ -160,13 +160,13 @@ elif st.session_state["authentication_status"]:
                         )
                         
                         # 3. ARCHIVE IT (The Vault) 🏦
-                        # Move from temp to vault instead of deleting
                         vault_path = os.path.join(VAULT_DIR, uploaded_file.name)
+                        # Remove existing if overwriting
+                        if os.path.exists(vault_path):
+                            os.remove(vault_path)
                         shutil.move(temp_path, vault_path)
                         
-                        # 4. UPDATE DB with File Path (Quick Patch)
-                        # We update the most recent transactions for this user to link the file
-                        # (In a production app, we'd pass this path to process_document, but this works for now)
+                        # 4. UPDATE DB with File Path
                         supabase.table("transactions") \
                             .update({"file_path": vault_path}) \
                             .eq("username", current_user) \
@@ -201,7 +201,7 @@ elif st.session_state["authentication_status"]:
 
         st.divider()
 
-      # --- 3. REPORTS & AUDIT VIEWER 🕵️‍♂️ ---
+        # --- 3. REPORTS & AUDIT VIEWER 🕵️‍♂️ ---
         st.header("📊 General Ledger & Viewer")
         if st.button("🔄 Refresh Ledger"):
             st.rerun()
@@ -227,7 +227,6 @@ elif st.session_state["authentication_status"]:
                 
                 # Configure the interactive table
                 display_cols = ['receipt_number', 'transaction_date', 'vendor', 'item_description', 'amount', 'deductible_percent', 'file_path']
-                # Ensure we only show cols that exist
                 available_cols = [c for c in display_cols if c in df.columns]
                 
                 # INTERACTIVE TABLE
@@ -242,87 +241,30 @@ elif st.session_state["authentication_status"]:
                 # RECEIPT VIEWER LOGIC 🖼️
                 if len(event.selection.rows) > 0:
                     selected_index = event.selection.rows[0]
-                    # Watch out for index alignment if table is sorted
                     selected_row = df.iloc[selected_index]
                     
-                    # DEBUG INFO 
                     st.divider()
                     st.markdown(f"### 🔎 Inspecting Receipt #{selected_row.get('receipt_number', 'Unknown')}")
                     
                     file_path = selected_row.get("file_path")
-                    st.write(f"**System Path:** `{file_path}`")
+                    # Debug line to show path
+                    # st.write(f"System Path: {file_path}")
                     
                     if file_path and os.path.exists(file_path):
                         st.success("✅ File Found in Vault.")
-                        
-                        # 1. READ FILE
                         import base64
                         with open(file_path, "rb") as f:
                             pdf_data = f.read()
                             base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
                         
-                        # 2. SHOW DOWNLOAD BUTTON (Backup)
-                        st.download_button(
-                            label="📥 Open/Download PDF",
-                            data=pdf_data,
-                            file_name=os.path.basename(file_path),
-                            mime="application/pdf"
-                        )
-                        
-                        # 3. SHOW IFRAME (Visual)
+                        # Use an iframe to display PDF
                         pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
                         st.markdown(pdf_display, unsafe_allow_html=True)
-                        
                     else:
-                        st.error("❌ File NOT found on disk.")
+                        st.error("❌ File NOT found in Vault.")
                         st.warning("Note: Old receipts uploaded before the Vault update were deleted/shredded. Only new uploads are saved.")
                 else:
                     st.caption("Waiting for selection...")
-
-            else:
-                st.caption("No financial data found.")
-        except Exception as e:
-            st.error(f"Ledger Error: {e}")
-                # Calculate Totals
-                if 'deductible_percent' in df.columns:
-                    df['write_off_value'] = df['amount'] * (df['deductible_percent'] / 100)
-                    total_write_off = df['write_off_value'].sum()
-                    st.metric("💰 Total Tax Write-off", f"${total_write_off:,.2f}")
-
-                st.subheader("📖 General Ledger (Click Row to View Receipt)")
-                
-                # Configure the interactive table
-                display_cols = ['receipt_number', 'transaction_date', 'vendor', 'item_description', 'amount', 'deductible_percent', 'file_path']
-                available_cols = [c for c in display_cols if c in df.columns]
-                
-                # INTERACTIVE TABLE
-                event = st.dataframe(
-                    df[available_cols], 
-                    hide_index=True, 
-                    use_container_width=True,
-                    on_select="rerun", # Triggers reload on click
-                    selection_mode="single-row" # Only allow one receipt at a time
-                )
-                
-                # RECEIPT VIEWER WINDOW 🖼️
-                if len(event.selection.rows) > 0:
-                    selected_index = event.selection.rows[0]
-                    selected_row = df.iloc[selected_index]
-                    file_path = selected_row.get("file_path")
-                    
-                    st.divider()
-                    st.markdown(f"### 🧾 Viewing Receipt #{selected_row.get('receipt_number', 'Unknown')}")
-                    
-                    if file_path and os.path.exists(file_path):
-                        # Display PDF
-                        # Using an iframe is the most robust way to show local PDFs in Streamlit
-                        import base64
-                        with open(file_path, "rb") as f:
-                            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-                        st.markdown(pdf_display, unsafe_allow_html=True)
-                    else:
-                        st.warning("⚠️ File not found in Vault. (Was it uploaded before the Vault update?)")
 
             else:
                 st.caption("No financial data found.")
@@ -381,4 +323,3 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
-

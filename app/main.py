@@ -123,26 +123,52 @@ elif st.session_state["authentication_status"]:
         
         # TAB 1: USER DATA (Bank Statements / NOA / Slips)
         with tab1:
-            uploaded_file = st.file_uploader("Upload Financials", type=["pdf", "xml", "csv"], key="user_upload")
+            # UPDATED: Accept Multiple Files is now TRUE
+            uploaded_files = st.file_uploader(
+                "Upload Financials (Batch Upload Supported)", 
+                type=["pdf", "xml", "csv"], 
+                key="user_upload",
+                accept_multiple_files=True  # <--- THE MAGIC SWITCH
+            )
             
-            if uploaded_file and 'accountant' in st.session_state:
-                with st.spinner("Reading Financials..."):
-                    temp_path = f"temp_{uploaded_file.name}"
-                    with open(temp_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
+            if uploaded_files and 'accountant' in st.session_state:
+                # Create a container for the progress
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                total_files = len(uploaded_files)
+                success_count = 0
+                
+                # Loop through the stack 🥞
+                for i, uploaded_file in enumerate(uploaded_files):
+                    status_text.text(f"Processing file {i+1} of {total_files}: {uploaded_file.name}...")
                     
-                    # --- CRITICAL: Pass the Identity Selection to the Brain ---
-                    user_entity = st.session_state.get("entity_type", "Personal")
+                    try:
+                        temp_path = f"temp_{uploaded_file.name}"
+                        with open(temp_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        
+                        # Get Identity Setting
+                        user_entity = st.session_state.get("entity_type", "Personal")
+                        
+                        # Process
+                        st.session_state.accountant.process_document(
+                            temp_path, 
+                            current_user, 
+                            doc_type="financial",
+                            entity_type=user_entity
+                        )
+                        
+                        if os.path.exists(temp_path): os.remove(temp_path)
+                        success_count += 1
+                        
+                    except Exception as e:
+                        st.error(f"Failed to process {uploaded_file.name}: {e}")
                     
-                    status = st.session_state.accountant.process_document(
-                        temp_path, 
-                        current_user, 
-                        doc_type="financial",
-                        entity_type=user_entity  # <--- WIRED HERE
-                    )
-                    
-                    st.success(status)
-                    if os.path.exists(temp_path): os.remove(temp_path)
+                    # Update Progress Bar
+                    progress_bar.progress((i + 1) / total_files)
+                
+                status_text.success(f"✅ Batch Complete! Processed {success_count}/{total_files} documents.")
 
         # TAB 2: TAX LIBRARY (Textbooks/Law)
         with tab2:
@@ -267,3 +293,4 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
+

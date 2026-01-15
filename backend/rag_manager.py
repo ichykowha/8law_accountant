@@ -6,6 +6,7 @@ from google import genai
 import pypdf
 from supabase import create_client
 import re
+from bs4 import BeautifulSoup
 
 class DocumentLibrarian:
     def __init__(self):

@@ -51,19 +51,54 @@ class DocumentLibrarian:
             return None
 
     # --- EXTRACTORS ---
-   # --- 1. SPENDING EXTRACTOR (Smart Auditor Version) 🧠 ---
-    def extract_transactions_ai(self, text, doc_id, username):
+  # --- SMART AUDITOR (Context Aware) 🧠 ---
+    def extract_transactions_ai(self, text, doc_id, username, entity_type="Personal"):
+        
+        # 1. Define the Auditor Persona based on Selection
+        audit_instructions = ""
+        if entity_type == "Personal":
+            audit_instructions = """
+            MODE: PERSONAL TAX (T1)
+            - Most expenses are NOT deductible (Groceries, Clothing, Personal Rent = 0%).
+            - Look for: Medical Expenses, Charitable Donations, Moving Expenses, Child Care.
+            - If uncertain, assume 0% deductible.
+            """
+        elif entity_type == "Small Business (Sole Prop)":
+            audit_instructions = """
+            MODE: SOLE PROPRIETORSHIP (T2125)
+            - You are auditing for Business Expenses.
+            - MEALS: 50% Deductible (if business related).
+            - GOLF/CLUB DUES: 0% Deductible (Strictly prohibited).
+            - OFFICE/RENT/SOFTWARE: 100% Deductible.
+            - PERSONAL ITEMS: 0% Deductible.
+            """
+        elif "Corporation" in entity_type:
+            audit_instructions = """
+            MODE: CORPORATION (T2)
+            - Aggressively categorize for Business Expenses.
+            - MEALS: 50% Deductible.
+            - SALARIES/WAGES: 100% Deductible.
+            - INSURANCE/ RENT: 100% Deductible.
+            - Life Insurance: Generally 0% unless specific conditions met.
+            """
+        elif "Non-Profit" in entity_type:
+            audit_instructions = """
+            MODE: NON-PROFIT / CHARITY (T1044/T3010)
+            - Focus on 'Program Expenses' vs 'Management/Admin'.
+            - GST/HST Rebates might apply.
+            - STRICTLY separate personal benefit (0%) from organizational cost (100%).
+            """
+
+        # 2. The Prompt
         prompt = f"""
         You are an elite Canadian Tax Auditor. 
-        Analyze the text below (Bank Statement or Receipt) and extract transaction details.
+        Analyze the text below (Bank Statement or Receipt).
         
-        CRITICAL: For each transaction, apply CRA Tax Rules to determine deductibility:
-        1. **Meals & Entertainment:** Generally 50% deductible.
-        2. **Golf / Club Dues:** 0% deductible (Strictly prohibited).
-        3. **Office Supplies / Rent / Software:** 100% deductible.
-        4. **Personal Items (Groceries/Clothes):** 0% deductible (Flag as Personal).
+        {audit_instructions}
         
-        RETURN A RAW JSON LIST of objects with these exact keys:
+        CRITICAL: For each transaction, apply CRA Tax Rules to determine deductibility based on the MODE above.
+        
+        RETURN A RAW JSON LIST:
         [
             {{
                 "transaction_date": "YYYY-MM-DD", 
@@ -71,9 +106,9 @@ class DocumentLibrarian:
                 "amount": 100.00, 
                 "category": "Office Supplies", 
                 "description": "Details",
-                "deductible_percent": 100,  (Integer: 0, 50, or 100)
-                "tax_category": "Stationery", (CRA Expense Category)
-                "audit_reasoning": "Purchase of printer paper is a valid office expense."
+                "deductible_percent": 100,
+                "tax_category": "Stationery",
+                "audit_reasoning": "Valid business expense under T2125 rules."
             }}
         ]
         
@@ -89,9 +124,7 @@ class DocumentLibrarian:
             for t in transactions:
                 t['username'] = username
                 t['source_doc_id'] = doc_id
-                # Safety defaults if AI forgets fields
                 if 'deductible_percent' not in t: t['deductible_percent'] = 0
-                if 'tax_category' not in t: t['tax_category'] = "Uncategorized"
                 valid_rows.append(t)
                 
             return valid_rows

@@ -8,7 +8,9 @@ class PowerhouseAccountant:
         self.librarian = DocumentLibrarian()
 
     # The New Version accepts 'doc_type'
-    def process_document(self, file_path, username="admin", doc_type="financial"):
+   def process_document(self, file_path, username, doc_type="financial", entity_type="Personal"):
+        # We pass 'entity_type' along to the Librarian now
+        return self.librarian.upload_document(file_path, os.path.basename(file_path), username, doc_type, entity_type)
         # 1. Get filename
         import os
         file_name = os.path.basename(file_path)
@@ -20,3 +22,4 @@ class PowerhouseAccountant:
     def process_input(self, user_text, history=[]):
         clues = self.librarian.search_memory(user_text)
         return self.query_engine.ask(user_text, history_context=history, document_clues=clues)
+

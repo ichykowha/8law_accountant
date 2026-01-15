@@ -201,7 +201,7 @@ elif st.session_state["authentication_status"]:
 
         st.divider()
 
-        # --- 3. REPORTS & AUDIT VIEWER 🕵️‍♂️ ---
+      # --- 3. REPORTS & AUDIT VIEWER 🕵️‍♂️ ---
         st.header("📊 General Ledger & Viewer")
         if st.button("🔄 Refresh Ledger"):
             st.rerun()
@@ -216,6 +216,73 @@ elif st.session_state["authentication_status"]:
             df = pd.DataFrame(response.data)
             
             if not df.empty:
+                # Calculate Totals
+                if 'deductible_percent' in df.columns:
+                    df['write_off_value'] = df['amount'] * (df['deductible_percent'] / 100)
+                    total_write_off = df['write_off_value'].sum()
+                    st.metric("💰 Total Tax Write-off", f"${total_write_off:,.2f}")
+
+                st.subheader("📖 General Ledger (Click Row to View)")
+                st.info("👇 Click a row below. The receipt will appear HERE (below the table).")
+                
+                # Configure the interactive table
+                display_cols = ['receipt_number', 'transaction_date', 'vendor', 'item_description', 'amount', 'deductible_percent', 'file_path']
+                # Ensure we only show cols that exist
+                available_cols = [c for c in display_cols if c in df.columns]
+                
+                # INTERACTIVE TABLE
+                event = st.dataframe(
+                    df[available_cols], 
+                    hide_index=True, 
+                    use_container_width=True,
+                    on_select="rerun", 
+                    selection_mode="single-row"
+                )
+                
+                # RECEIPT VIEWER LOGIC 🖼️
+                if len(event.selection.rows) > 0:
+                    selected_index = event.selection.rows[0]
+                    # Watch out for index alignment if table is sorted
+                    selected_row = df.iloc[selected_index]
+                    
+                    # DEBUG INFO 
+                    st.divider()
+                    st.markdown(f"### 🔎 Inspecting Receipt #{selected_row.get('receipt_number', 'Unknown')}")
+                    
+                    file_path = selected_row.get("file_path")
+                    st.write(f"**System Path:** `{file_path}`")
+                    
+                    if file_path and os.path.exists(file_path):
+                        st.success("✅ File Found in Vault.")
+                        
+                        # 1. READ FILE
+                        import base64
+                        with open(file_path, "rb") as f:
+                            pdf_data = f.read()
+                            base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
+                        
+                        # 2. SHOW DOWNLOAD BUTTON (Backup)
+                        st.download_button(
+                            label="📥 Open/Download PDF",
+                            data=pdf_data,
+                            file_name=os.path.basename(file_path),
+                            mime="application/pdf"
+                        )
+                        
+                        # 3. SHOW IFRAME (Visual)
+                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+                        st.markdown(pdf_display, unsafe_allow_html=True)
+                        
+                    else:
+                        st.error("❌ File NOT found on disk.")
+                        st.warning("Note: Old receipts uploaded before the Vault update were deleted/shredded. Only new uploads are saved.")
+                else:
+                    st.caption("Waiting for selection...")
+
+            else:
+                st.caption("No financial data found.")
+        except Exception as e:
+            st.error(f"Ledger Error: {e}")
                 # Calculate Totals
                 if 'deductible_percent' in df.columns:
                     df['write_off_value'] = df['amount'] * (df['deductible_percent'] / 100)
@@ -314,3 +381,4 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
+

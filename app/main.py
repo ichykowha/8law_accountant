@@ -106,7 +106,7 @@ elif st.session_state["authentication_status"]:
             except Exception:
                 pass
 
-        # --- 1. IDENTITY SELECTOR 👔 (Moved to Top for Safety) ---
+        # --- 1. IDENTITY SELECTOR 👔 ---
         st.header("🏢 Tax Profile")
         entity_type = st.radio(
             "I am acting as:",
@@ -121,37 +121,30 @@ elif st.session_state["authentication_status"]:
         st.header("📂 Data Ingestion")
         tab1, tab2 = st.tabs(["My Files", "Tax Library"])
         
-        # TAB 1: USER DATA (Bank Statements / NOA / Slips)
+        # TAB 1: USER DATA (Batch Upload)
         with tab1:
-            # UPDATED: Accept Multiple Files is now TRUE
             uploaded_files = st.file_uploader(
-                "Upload Financials (Batch Upload Supported)", 
+                "Upload Financials (Batch Supported)", 
                 type=["pdf", "xml", "csv"], 
                 key="user_upload",
-                accept_multiple_files=True  # <--- THE MAGIC SWITCH
+                accept_multiple_files=True  # Bulk Upload Active
             )
             
             if uploaded_files and 'accountant' in st.session_state:
-                # Create a container for the progress
                 progress_bar = st.progress(0)
                 status_text = st.empty()
-                
                 total_files = len(uploaded_files)
                 success_count = 0
                 
-                # Loop through the stack 🥞
                 for i, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"Processing file {i+1} of {total_files}: {uploaded_file.name}...")
-                    
+                    status_text.text(f"Processing {i+1}/{total_files}: {uploaded_file.name}...")
                     try:
                         temp_path = f"temp_{uploaded_file.name}"
                         with open(temp_path, "wb") as f:
                             f.write(uploaded_file.getbuffer())
                         
-                        # Get Identity Setting
                         user_entity = st.session_state.get("entity_type", "Personal")
                         
-                        # Process
                         st.session_state.accountant.process_document(
                             temp_path, 
                             current_user, 
@@ -161,16 +154,14 @@ elif st.session_state["authentication_status"]:
                         
                         if os.path.exists(temp_path): os.remove(temp_path)
                         success_count += 1
-                        
                     except Exception as e:
-                        st.error(f"Failed to process {uploaded_file.name}: {e}")
+                        st.error(f"Error on {uploaded_file.name}: {e}")
                     
-                    # Update Progress Bar
                     progress_bar.progress((i + 1) / total_files)
                 
-                status_text.success(f"✅ Batch Complete! Processed {success_count}/{total_files} documents.")
+                status_text.success(f"✅ Batch Complete! {success_count}/{total_files} processed.")
 
-        # TAB 2: TAX LIBRARY (Textbooks/Law)
+        # TAB 2: TAX LIBRARY
         with tab2:
             st.info("Upload Tax Acts (XML/PDF) here.")
             lib_file = st.file_uploader("Upload Knowledge", type=["pdf", "xml"], key="lib_upload")
@@ -191,66 +182,62 @@ elif st.session_state["authentication_status"]:
 
         st.divider()
 
-        # --- 3. REPORTS & HISTORY ---
-        st.header("📊 Tax Data")
-        if st.button("🔄 Refresh Data"):
+        # --- 3. REPORTS & AUDIT LOG ---
+        st.header("📊 Tax Reports")
+        if st.button("🔄 Refresh Ledger"):
             st.rerun()
 
-        # A. TAX HISTORY CARD (NOA) 📜
+        # A. AUDIT LOG (General Ledger) 📖
         try:
-            h_response = supabase.table("tax_history") \
+            response = supabase.table("transactions") \
                 .select("*") \
                 .eq("username", current_user) \
-                .order("tax_year", desc=True) \
-                .limit(1) \
+                .order("transaction_date", desc=True) \
                 .execute()
             
-            if h_response.data:
-                history = h_response.data[0]
-                st.subheader(f"📜 NOA ({history['tax_year']})")
-                st.metric("RRSP Room", f"${history['rrsp_deduction_limit']:,.0f}")
-                st.metric("Unused Tuition", f"${history['tuition_federal']:,.0f}")
-                if history['capital_losses'] > 0:
-                    st.warning(f"Loss Carryforward: ${history['capital_losses']:,.0f}")
-                st.divider()
-        except Exception:
-            pass
-
-        # B. TAX SLIPS (T4s, etc) 📑
-        try:
-            t_response = supabase.table("tax_slips").select("*").eq("username", current_user).execute()
-            df_tax = pd.DataFrame(t_response.data)
-            if not df_tax.empty:
-                st.caption(f"📑 {len(df_tax)} Official Tax Slips")
-                csv_tax = df_tax.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download T-Slips", csv_tax, "8law_tax_slips.csv", "text/csv")
-        except Exception:
-            pass
-
-        # C. TRANSACTIONS (Auto-Audited) 💳
-        try:
-            response = supabase.table("transactions").select("*").eq("username", current_user).execute()
             df = pd.DataFrame(response.data)
             
             if not df.empty:
-                st.write("---")
-                st.caption(f"💳 {len(df)} Transactions Processed")
-                
-                # Calculate the "Real" Tax Write-off
+                # Calculate Totals
                 if 'deductible_percent' in df.columns:
-                    # Logic: Amount * (Percent / 100)
                     df['write_off_value'] = df['amount'] * (df['deductible_percent'] / 100)
                     total_write_off = df['write_off_value'].sum()
-                    
-                    st.metric("💰 Total Tax Write-off", f"${total_write_off:,.2f}", help="Calculated based on CRA rules")
+                    st.metric("💰 Total Tax Write-off", f"${total_write_off:,.2f}")
+
+                st.subheader("📖 General Ledger")
+                # Show key columns
+                display_cols = ['receipt_number', 'transaction_date', 'vendor', 'item_description', 'amount', 'deductible_percent', 'audit_reasoning']
+                available_cols = [c for c in display_cols if c in df.columns]
+                
+                st.dataframe(df[available_cols], hide_index=True, use_container_width=True)
                 
                 csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download Audited CSV", csv, "8law_audited.csv", "text/csv")
+                st.download_button("📥 Download Audit Pack", csv, "8law_ledger.csv", "text/csv")
             else:
                 st.caption("No financial data found.")
-        except Exception:
-            pass
-            
+        except Exception as e:
+            st.error(f"Ledger Error: {e}")
+
+        # --- 4. BRAIN TRAINING 🧠 ---
+        st.divider()
+        with st.expander("🧠 Teach 8law (Add Rules)"):
+            with st.form("learning_form"):
+                st.caption("Teach 8law a specific tax rule.")
+                k_word = st.text_input("Keyword (Vendor/Item)", placeholder="e.g. Paintbrush")
+                cat = st.text_input("Tax Category", placeholder="e.g. Art Supplies")
+                deduct = st.number_input("Deductible %", min_value=0, max_value=100, step=50)
+                
+                if st.form_submit_button("Save Rule"):
+                    try:
+                        supabase.table("tax_learning_bank").insert({
+                            "keyword": k_word,
+                            "tax_category": cat,
+                            "deductible_percent": deduct
+                        }).execute()
+                        st.success(f"Learned: {k_word} = {deduct}%")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
     # --- MAIN CHAT AREA ---
     st.title("8law Super Accountant")
 
@@ -293,4 +280,3 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
-

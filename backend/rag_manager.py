@@ -58,10 +58,8 @@ class DocumentLibrarian:
         try:
             rules_response = self.supabase.table("tax_learning_bank").select("*").execute()
             learned_rules = rules_response.data
-            
             rules_text = "LEARNED ITEM RULES (PRIORITY):\n"
             for rule in learned_rules:
-                # We specifically mention 'Vendor OR Line Item' here
                 rules_text += f"- Keyword: '{rule['keyword']}' -> Category: '{rule['tax_category']}' ({rule['deductible_percent']}%)\n"
         except:
             rules_text = ""
@@ -84,7 +82,7 @@ class DocumentLibrarian:
         CRITICAL RULES FOR MIXED RECEIPTS:
         1. **SCAN LINE ITEMS:** Do not just look at the Vendor. Look at what was bought.
         2. **SPLIT TRANSACTIONS:** If a receipt contains items with DIFFERENT tax rules (e.g., 'Lumber' vs 'Candy'), create SEPARATE transaction entries for them.
-        3. **APPLY MEMORY:** If you see a specific keyword (e.g., 'Plywood') in the item list, apply that specific rule to that amount.
+        3. **APPLY MEMORY:** If you see a specific keyword in the item list, apply that specific rule.
         
         RETURN JSON LIST:
         [
@@ -93,16 +91,10 @@ class DocumentLibrarian:
                 "vendor": "Home Depot", 
                 "amount": 50.00, 
                 "category": "Building Supplies", 
-                "description": "Plywood (Item Match)",
-                "deductible_percent": 100
-            }},
-            {{
-                "transaction_date": "YYYY-MM-DD", 
-                "vendor": "Home Depot", 
-                "amount": 2.50, 
-                "category": "Personal", 
-                "description": "Snack Bar (Non-Deductible)",
-                "deductible_percent": 0
+                "item_description": "Plywood (Item Match)",
+                "deductible_percent": 100,
+                "tax_category": "Building Materials",
+                "audit_reasoning": "Valid Business Expense"
             }}
         ]
         
@@ -115,7 +107,6 @@ class DocumentLibrarian:
             clean_json = response.text.replace("```json", "").replace("```", "").strip()
             transactions = json.loads(clean_json)
             
-            # Add metadata
             valid_rows = []
             for t in transactions:
                 t['username'] = username
@@ -128,7 +119,6 @@ class DocumentLibrarian:
         except Exception as e:
             print(f"Audit Error: {e}")
             return []
-
     def extract_tax_slip_ai(self, text, doc_id, username):
         prompt = f"""
         Identify Tax Slips (T4, T5, etc). Return JSON list:

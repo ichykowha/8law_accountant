@@ -9,3 +9,5 @@ openpyxl
 streamlit-authenticator
 PyYAML
 supabase
+beautifulsoup4
+lxml

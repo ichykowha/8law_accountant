@@ -164,7 +164,7 @@ class DocumentLibrarian:
         except: return None
 
     # --- MAIN UPLOAD ---
-    def upload_document(self, file_path, file_name, username, doc_type="financial"):
+    def upload_document(self, file_path, file_name, username, doc_type="financial", entity_type="Personal"):
         if not self.is_ready: return "❌ Librarian offline."
         
         # 1. Register Document
@@ -207,7 +207,8 @@ class DocumentLibrarian:
                 if slips: self.supabase.table("tax_slips").insert(slips).execute()
                 # Check Txns
                 elif not slips:
-                    txns = self.extract_transactions_ai(text_content, doc_id, username)
+                   # Pass the user's choice to the extraction engine
+                    txns = self.extract_transactions_ai(text_content, doc_id, username, entity_type)
                     if txns: self.supabase.table("transactions").insert(txns).execute()
 
         # 3. Chunk & Embed

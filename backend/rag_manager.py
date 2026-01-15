@@ -51,17 +51,54 @@ class DocumentLibrarian:
             return None
 
     # --- EXTRACTORS ---
+   # --- 1. SPENDING EXTRACTOR (Smart Auditor Version) 🧠 ---
     def extract_transactions_ai(self, text, doc_id, username):
         prompt = f"""
-        You are a Data Extraction Engine. Extract financial transactions from this text.
-        Return RAW JSON list: [{{"transaction_date": "YYYY-MM-DD", "vendor": "Name", "amount": 0.00, "category": "Type", "description": "Details"}}]
-        TEXT: {text[:30000]}
+        You are an elite Canadian Tax Auditor. 
+        Analyze the text below (Bank Statement or Receipt) and extract transaction details.
+        
+        CRITICAL: For each transaction, apply CRA Tax Rules to determine deductibility:
+        1. **Meals & Entertainment:** Generally 50% deductible.
+        2. **Golf / Club Dues:** 0% deductible (Strictly prohibited).
+        3. **Office Supplies / Rent / Software:** 100% deductible.
+        4. **Personal Items (Groceries/Clothes):** 0% deductible (Flag as Personal).
+        
+        RETURN A RAW JSON LIST of objects with these exact keys:
+        [
+            {{
+                "transaction_date": "YYYY-MM-DD", 
+                "vendor": "Name", 
+                "amount": 100.00, 
+                "category": "Office Supplies", 
+                "description": "Details",
+                "deductible_percent": 100,  (Integer: 0, 50, or 100)
+                "tax_category": "Stationery", (CRA Expense Category)
+                "audit_reasoning": "Purchase of printer paper is a valid office expense."
+            }}
+        ]
+        
+        TEXT TO ANALYZE:
+        {text[:30000]}
         """
         try:
             response = self.client.models.generate_content(model="gemini-2.5-pro", contents=prompt)
-            clean = response.text.replace("```json", "").replace("```", "").strip()
-            return [dict(t, username=username, source_doc_id=doc_id) for t in json.loads(clean)]
-        except: return []
+            clean_json = response.text.replace("```json", "").replace("```", "").strip()
+            transactions = json.loads(clean_json)
+            
+            valid_rows = []
+            for t in transactions:
+                t['username'] = username
+                t['source_doc_id'] = doc_id
+                # Safety defaults if AI forgets fields
+                if 'deductible_percent' not in t: t['deductible_percent'] = 0
+                if 'tax_category' not in t: t['tax_category'] = "Uncategorized"
+                valid_rows.append(t)
+                
+            return valid_rows
+            
+        except Exception as e:
+            print(f"Transaction Audit Error: {e}")
+            return []
 
     def extract_tax_slip_ai(self, text, doc_id, username):
         prompt = f"""

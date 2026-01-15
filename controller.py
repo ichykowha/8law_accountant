@@ -1,12 +1,29 @@
 import os
-from rag_manager import DocumentLibrarian
+import sys
+
+# --- FIX IMPORTS ---
+# This block ensures we can find 'rag_manager' whether it is in 'backend' or root.
+try:
+    # Try finding it in the backend folder first (Most likely)
+    from backend.rag_manager import DocumentLibrarian
+except ImportError:
+    try:
+        # Try finding it in the same folder (Fallback)
+        from rag_manager import DocumentLibrarian
+    except ImportError:
+        # If both fail, we manually add the backend folder to the path
+        sys.path.append(os.path.join(os.path.dirname(__file__), 'backend'))
+        from rag_manager import DocumentLibrarian
+
 from google import genai
 import streamlit as st
 
 class PowerhouseAccountant:
     def __init__(self):
+        # Initialize the Librarian
         self.librarian = DocumentLibrarian()
         try:
+            # Initialize Gemini
             self.client = genai.Client(api_key=st.secrets["GEMINI_KEY"])
         except Exception as e:
             print(f"Controller Init Error: {e}")
@@ -14,7 +31,7 @@ class PowerhouseAccountant:
     def process_document(self, file_path, username, doc_type="financial", entity_type="Personal"):
         """
         Ingests a document. 
-        Now accepts 'entity_type' to tell the AI if it's Personal or Business.
+        Passes 'entity_type' (Personal vs Business) to the Librarian.
         """
         if not self.librarian.is_ready:
             return "⚠️ AI Librarian is offline."

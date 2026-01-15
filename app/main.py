@@ -99,52 +99,15 @@ elif st.session_state["authentication_status"]:
         authenticator.logout('Logout', 'main')
         st.divider()
         
+        # Initialize Controller
         if 'accountant' not in st.session_state:
             try:
                 st.session_state.accountant = PowerhouseAccountant()
             except Exception:
                 pass
-        
-        # --- TABS FOR UPLOAD ---
-        st.header("📂 Data Ingestion")
-        tab1, tab2 = st.tabs(["My Files", "Tax Library"])
-        
-        # TAB 1: USER DATA (Bank Statements / NOA / Slips)
-        with tab1:
-            # UPDATED: Added XML and CSV support
-            uploaded_file = st.file_uploader("Upload Financials", type=["pdf", "xml", "csv"], key="user_upload")
-            if uploaded_file and 'accountant' in st.session_state:
-                with st.spinner("Reading Financials..."):
-                    temp_path = f"temp_{uploaded_file.name}"
-                    with open(temp_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    
-                    # Upload as "financial"
-                    status = st.session_state.accountant.process_document(temp_path, current_user, doc_type="financial")
-                    st.success(status)
-                    if os.path.exists(temp_path): os.remove(temp_path)
 
-        # TAB 2: TAX LIBRARY (Textbooks/Law)
-        with tab2:
-            st.info("Upload Tax Acts (XML/PDF) here.")
-            # UPDATED: Added XML support for the Tax Act
-            lib_file = st.file_uploader("Upload Knowledge", type=["pdf", "xml"], key="lib_upload")
-            if lib_file and 'accountant' in st.session_state:
-                with st.spinner("Ingesting Knowledge Base..."):
-                    temp_path = f"temp_{lib_file.name}"
-                    with open(temp_path, "wb") as f:
-                        f.write(lib_file.getbuffer())
-                    
-                    # Upload as "library"
-                    status = st.session_state.accountant.process_document(temp_path, current_user, doc_type="library")
-                    st.success(status)
-                    if os.path.exists(temp_path): os.remove(temp_path)
-
-        st.divider()
-
-        # --- IDENTITY SELECTOR 👔 ---
+        # --- 1. IDENTITY SELECTOR 👔 (Moved to Top for Safety) ---
         st.header("🏢 Tax Profile")
-        # UPDATED: Added Non-Profit
         entity_type = st.radio(
             "I am acting as:",
             ["Personal", "Small Business (Sole Prop)", "Corporation", "Non-Profit / Charity"],
@@ -152,15 +115,62 @@ elif st.session_state["authentication_status"]:
             help="This tells 8law which CRA Tax Rules apply (e.g., T2 vs T1044)."
         )
         st.session_state["entity_type"] = entity_type
+        st.divider()
         
+        # --- 2. DATA INGESTION ---
+        st.header("📂 Data Ingestion")
+        tab1, tab2 = st.tabs(["My Files", "Tax Library"])
+        
+        # TAB 1: USER DATA (Bank Statements / NOA / Slips)
+        with tab1:
+            uploaded_file = st.file_uploader("Upload Financials", type=["pdf", "xml", "csv"], key="user_upload")
+            
+            if uploaded_file and 'accountant' in st.session_state:
+                with st.spinner("Reading Financials..."):
+                    temp_path = f"temp_{uploaded_file.name}"
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # --- CRITICAL: Pass the Identity Selection to the Brain ---
+                    user_entity = st.session_state.get("entity_type", "Personal")
+                    
+                    status = st.session_state.accountant.process_document(
+                        temp_path, 
+                        current_user, 
+                        doc_type="financial",
+                        entity_type=user_entity  # <--- WIRED HERE
+                    )
+                    
+                    st.success(status)
+                    if os.path.exists(temp_path): os.remove(temp_path)
+
+        # TAB 2: TAX LIBRARY (Textbooks/Law)
+        with tab2:
+            st.info("Upload Tax Acts (XML/PDF) here.")
+            lib_file = st.file_uploader("Upload Knowledge", type=["pdf", "xml"], key="lib_upload")
+            
+            if lib_file and 'accountant' in st.session_state:
+                with st.spinner("Ingesting Knowledge Base..."):
+                    temp_path = f"temp_{lib_file.name}"
+                    with open(temp_path, "wb") as f:
+                        f.write(lib_file.getbuffer())
+                    
+                    status = st.session_state.accountant.process_document(
+                        temp_path, 
+                        current_user, 
+                        doc_type="library"
+                    )
+                    st.success(status)
+                    if os.path.exists(temp_path): os.remove(temp_path)
+
         st.divider()
 
-        # --- REPORTS & HISTORY ---
+        # --- 3. REPORTS & HISTORY ---
         st.header("📊 Tax Data")
         if st.button("🔄 Refresh Data"):
             st.rerun()
 
-        # 1. TAX HISTORY CARD (NOA) - NEW! 📜
+        # A. TAX HISTORY CARD (NOA) 📜
         try:
             h_response = supabase.table("tax_history") \
                 .select("*") \
@@ -180,7 +190,7 @@ elif st.session_state["authentication_status"]:
         except Exception:
             pass
 
-        # 2. TAX SLIPS (T4s, etc) - NEW! 📑
+        # B. TAX SLIPS (T4s, etc) 📑
         try:
             t_response = supabase.table("tax_slips").select("*").eq("username", current_user).execute()
             df_tax = pd.DataFrame(t_response.data)
@@ -191,7 +201,7 @@ elif st.session_state["authentication_status"]:
         except Exception:
             pass
 
-        # 3. TRANSACTIONS (Auto-Audited) 💳
+        # C. TRANSACTIONS (Auto-Audited) 💳
         try:
             response = supabase.table("transactions").select("*").eq("username", current_user).execute()
             df = pd.DataFrame(response.data)
@@ -206,7 +216,7 @@ elif st.session_state["authentication_status"]:
                     df['write_off_value'] = df['amount'] * (df['deductible_percent'] / 100)
                     total_write_off = df['write_off_value'].sum()
                     
-                    st.metric("💰 Total Tax Write-off", f"${total_write_off:,.2f}", help="Calculated based on CRA rules (e.g., 50% for meals)")
+                    st.metric("💰 Total Tax Write-off", f"${total_write_off:,.2f}", help="Calculated based on CRA rules")
                 
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Download Audited CSV", csv, "8law_audited.csv", "text/csv")
@@ -257,4 +267,3 @@ elif st.session_state["authentication_status"]:
         if 'answer' in locals():
             st.session_state.messages.append({"role": "assistant", "content": answer})
             save_message(current_user, "assistant", answer)
-

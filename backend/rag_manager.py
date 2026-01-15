@@ -51,86 +51,82 @@ class DocumentLibrarian:
             return None
 
     # --- EXTRACTORS ---
-  # --- SMART AUDITOR (Context Aware) 🧠 ---
+# --- SMART AUDITOR (Granular Item-Level) 🧠 ---
     def extract_transactions_ai(self, text, doc_id, username, entity_type="Personal"):
         
-        # 1. Define the Auditor Persona based on Selection
-        audit_instructions = ""
-        if entity_type == "Personal":
-            audit_instructions = """
-            MODE: PERSONAL TAX (T1)
-            - Most expenses are NOT deductible (Groceries, Clothing, Personal Rent = 0%).
-            - Look for: Medical Expenses, Charitable Donations, Moving Expenses, Child Care.
-            - If uncertain, assume 0% deductible.
-            """
-        elif entity_type == "Small Business (Sole Prop)":
-            audit_instructions = """
-            MODE: SOLE PROPRIETORSHIP (T2125)
-            - You are auditing for Business Expenses.
-            - MEALS: 50% Deductible (if business related).
-            - GOLF/CLUB DUES: 0% Deductible (Strictly prohibited).
-            - OFFICE/RENT/SOFTWARE: 100% Deductible.
-            - PERSONAL ITEMS: 0% Deductible.
-            """
-        elif "Corporation" in entity_type:
-            audit_instructions = """
-            MODE: CORPORATION (T2)
-            - Aggressively categorize for Business Expenses.
-            - MEALS: 50% Deductible.
-            - SALARIES/WAGES: 100% Deductible.
-            - INSURANCE/ RENT: 100% Deductible.
-            - Life Insurance: Generally 0% unless specific conditions met.
-            """
-        elif "Non-Profit" in entity_type:
-            audit_instructions = """
-            MODE: NON-PROFIT / CHARITY (T1044/T3010)
-            - Focus on 'Program Expenses' vs 'Management/Admin'.
-            - GST/HST Rebates might apply.
-            - STRICTLY separate personal benefit (0%) from organizational cost (100%).
-            """
+        # 1. Fetch Learned Rules
+        try:
+            rules_response = self.supabase.table("tax_learning_bank").select("*").execute()
+            learned_rules = rules_response.data
+            
+            rules_text = "LEARNED ITEM RULES (PRIORITY):\n"
+            for rule in learned_rules:
+                # We specifically mention 'Vendor OR Line Item' here
+                rules_text += f"- Keyword: '{rule['keyword']}' -> Category: '{rule['tax_category']}' ({rule['deductible_percent']}%)\n"
+        except:
+            rules_text = ""
 
-        # 2. The Prompt
+        # 2. Context
+        if entity_type == "Personal":
+            audit_instructions = "MODE: PERSONAL. Default 0%."
+        else:
+            audit_instructions = f"MODE: BUSINESS ({entity_type}). Aggressively categorize."
+
+        # 3. The Prompt (Updated for Line Splitting)
         prompt = f"""
         You are an elite Canadian Tax Auditor. 
-        Analyze the text below (Bank Statement or Receipt).
+        Analyze the text below (Receipt/Statement).
         
-        {audit_instructions}
+        CONTEXT: {audit_instructions}
         
-        CRITICAL: For each transaction, apply CRA Tax Rules to determine deductibility based on the MODE above.
+        {rules_text}
         
-        RETURN A RAW JSON LIST:
+        CRITICAL RULES FOR MIXED RECEIPTS:
+        1. **SCAN LINE ITEMS:** Do not just look at the Vendor. Look at what was bought.
+        2. **SPLIT TRANSACTIONS:** If a receipt contains items with DIFFERENT tax rules (e.g., 'Lumber' vs 'Candy'), create SEPARATE transaction entries for them.
+        3. **APPLY MEMORY:** If you see a specific keyword (e.g., 'Plywood') in the item list, apply that specific rule to that amount.
+        
+        RETURN JSON LIST:
         [
             {{
                 "transaction_date": "YYYY-MM-DD", 
-                "vendor": "Name", 
-                "amount": 100.00, 
-                "category": "Office Supplies", 
-                "description": "Details",
-                "deductible_percent": 100,
-                "tax_category": "Stationery",
-                "audit_reasoning": "Valid business expense under T2125 rules."
+                "vendor": "Home Depot", 
+                "amount": 50.00, 
+                "category": "Building Supplies", 
+                "description": "Plywood (Item Match)",
+                "deductible_percent": 100
+            }},
+            {{
+                "transaction_date": "YYYY-MM-DD", 
+                "vendor": "Home Depot", 
+                "amount": 2.50, 
+                "category": "Personal", 
+                "description": "Snack Bar (Non-Deductible)",
+                "deductible_percent": 0
             }}
         ]
         
         TEXT TO ANALYZE:
         {text[:30000]}
         """
+        
         try:
             response = self.client.models.generate_content(model="gemini-2.5-pro", contents=prompt)
             clean_json = response.text.replace("```json", "").replace("```", "").strip()
             transactions = json.loads(clean_json)
             
+            # Add metadata
             valid_rows = []
             for t in transactions:
                 t['username'] = username
                 t['source_doc_id'] = doc_id
                 if 'deductible_percent' not in t: t['deductible_percent'] = 0
                 valid_rows.append(t)
-                
+            
             return valid_rows
             
         except Exception as e:
-            print(f"Transaction Audit Error: {e}")
+            print(f"Audit Error: {e}")
             return []
 
     def extract_tax_slip_ai(self, text, doc_id, username):

@@ -1,0 +1,2 @@
+supabase  :    sb_secret_fL25NlAf7U4NvCx8hb-s_g_iAXrg1S3
+url https://qpduiwhbvvggfrhkfifq.supabase.co

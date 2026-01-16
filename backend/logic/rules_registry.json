@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "jurisdiction": "CA",
+  "module": "T1",
+  "years": {
+    "2024": {
+      "federal": {
+        "brackets": [
+          {"up_to": "55867.00", "rate": "0.15"},
+          {"up_to": "111733.00", "rate": "0.205"},
+          {"up_to": "173205.00", "rate": "0.26"},
+          {"up_to": "246752.00", "rate": "0.29"},
+          {"up_to": "inf", "rate": "0.33"}
+        ]
+      },
+      "capital_gains": {
+        "default_inclusion_rate": "0.50",
+        "notes": "Default inclusion rate for 2024"
+      },
+      "rrsp": {
+        "percent_limit": "0.18",
+        "dollar_limit": "31560"
+      }
+    }
+  }
+}

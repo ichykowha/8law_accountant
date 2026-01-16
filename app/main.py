@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from decimal import Decimal
 from fastapi import File, UploadFile
 from backend.logic.ocr_engine import scan_pdf
+from backend.logic.t4_parser import parse_t4_text
 
 # Import our custom modules
 try:
@@ -89,15 +90,19 @@ def calculate_tax(request: TaxCalculationRequest):
 @app.post("/document/scan")
 async def scan_document(file: UploadFile = File(...)):
     """
-    Receives a PDF file, scans it, and returns the text.
+    Receives a PDF, scans the text (OCR), AND parses T4 data.
     """
-    # Read the file bytes
     content = await file.read()
-
-    # Send to the OCR Engine
-    result = scan_pdf(content)
-
+    
+    # 1. Get Raw Text (The Eyes)
+    ocr_result = scan_pdf(content)
+    raw_text = ocr_result.get("raw_text", "")
+    
+    # 2. Extract Data (The Brain)
+    parsed_data = parse_t4_text(raw_text)
+    
     return {
         "filename": file.filename,
-        "scan_result": result
+        "scan_result": ocr_result,
+        "parsed_data": parsed_data  # <--- This is the new gold
     }

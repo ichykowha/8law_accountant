@@ -1,325 +1,103 @@
-import streamlit as st
-import streamlit_authenticator as stauth
-import os
+# ------------------------------------------------------------------------------
+# 8law - Super Accountant
+# Module: Main API Application (FastAPI)
+# File: app/main.py
+# ------------------------------------------------------------------------------
+
 import sys
-import shutil 
-import pandas as pd
-from supabase import create_client, Client
+import os
 
-# Path Setup
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# FIX: Add the parent directory to the system path so Python can find 'backend'
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Create Vault Directory if it doesn't exist
-VAULT_DIR = "receipts_vault"
-if not os.path.exists(VAULT_DIR):
-    os.makedirs(VAULT_DIR)
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from decimal import Decimal
+from fastapi import File, UploadFile
+from backend.logic.ocr_engine import scan_pdf
 
-# Try to import Controller
+# Import our custom modules
 try:
-    from controller import PowerhouseAccountant
+    from backend.database.connection import get_db
+    from backend.database.models import User
+    from backend.logic.t1_engine import T1DecisionEngine
 except ImportError as e:
-    st.error(f"⚠️ Critical System Error: Could not import Controller. {e}")
-    st.stop()
+    print(f"CRITICAL IMPORT ERROR: {e}")
+    raise e
 
-# --- 1. CONFIG ---
-st.set_page_config(page_title="8law Accountant", page_icon="💰", layout="wide")
+app = FastAPI(title="8law Super Accountant", version="1.0.0")
 
-# --- 2. SETUP DATABASE ---
-@st.cache_resource
-def init_connection():
-    try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
-        return create_client(url, key)
-    except Exception:
-        return None
+# --- Pydantic Models (Data Validation) ---
 
-supabase = init_connection()
+class UserCreate(BaseModel):
+    email: str
+    password: str
+    first_name: str
+    last_name: str
 
-# Helper: Load History
-def load_history(username):
-    if not supabase: return []
-    try:
-        response = supabase.table("chat_history") \
-            .select("*") \
-            .eq("username", username) \
-            .order("created_at") \
-            .execute()
-        return response.data
-    except Exception:
-        return []
+class TaxCalculationRequest(BaseModel):
+    income_type: str  # e.g., "T4", "CAPITAL_GAINS"
+    amount: float
+    province: str = "ON" # Default to Ontario
 
-# Helper: Save Message
-def save_message(username, role, content):
-    if not supabase: return
-    try:
-        data = {"username": username, "role": role, "content": content}
-        supabase.table("chat_history").insert(data).execute()
-    except Exception:
-        pass
+# --- API Endpoints ---
 
-# --- 3. AUTH CONFIG ---
-def get_mutable_config():
-    secrets = st.secrets
-    return {
-        "credentials": {
-            "usernames": {
-                u: dict(d) for u, d in secrets["credentials"]["usernames"].items()
-            }
-        },
-        "cookie": dict(secrets["cookie"]),
-        "preauthorized": dict(secrets["preauthorized"])
-    }
+@app.get("/")
+def health_check():
+    """Simple check to see if the server is running."""
+    return {"status": "online", "system": "8law-core"}
 
-try:
-    config = get_mutable_config()
-    authenticator = stauth.Authenticate(
-        config['credentials'],
-        config['cookie']['name'],
-        config['cookie']['key'],
-        config['cookie']['expiry_days']
-    )
-except Exception as e:
-    st.error(f"Auth Error: {e}")
-    st.stop()
-
-# --- 4. APP INTERFACE ---
-
-# Login Screen
-if st.session_state.get("authentication_status") is None or st.session_state["authentication_status"] is False:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.header("🔐 8law Secure Login")
-        authenticator.login()
-        if st.session_state["authentication_status"] is False:
-            st.error('❌ Username/password is incorrect')
-
-# Main App (Logged In)
-elif st.session_state["authentication_status"]:
-    current_user = st.session_state["username"]
+@app.post("/users/register")
+def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    """Creates a new user in the Supabase database."""
+    # Check if email already exists
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
     
-    # --- SIDEBAR ---
-    with st.sidebar:
-        user_real_name = config['credentials']['usernames'][current_user]['name']
-        st.write(f"Welcome, *{user_real_name}*")
-        authenticator.logout('Logout', 'main')
-        st.divider()
-        
-        # Initialize Controller
-        if 'accountant' not in st.session_state:
-            try:
-                st.session_state.accountant = PowerhouseAccountant()
-            except Exception:
-                pass
+    # Create the new user object
+    new_user = User(
+        email=user.email,
+        password_hash=user.password, 
+        legal_first_name=user.first_name,
+        legal_last_name=user.last_name
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return {"status": "success", "user_id": str(new_user.id)}
 
-        # --- 1. IDENTITY SELECTOR 👔 ---
-        st.header("🏢 Tax Profile")
-        entity_type = st.radio(
-            "I am acting as:",
-            ["Personal", "Small Business (Sole Prop)", "Corporation", "Non-Profit / Charity"],
-            index=0,
-            help="This tells 8law which CRA Tax Rules apply (e.g., T2 vs T1044)."
-        )
-        st.session_state["entity_type"] = entity_type
-        st.divider()
-        
-        # --- 2. DATA INGESTION ---
-        st.header("📂 Data Ingestion")
-        tab1, tab2 = st.tabs(["My Files", "Tax Library"])
-        
-        # TAB 1: USER DATA (Vault Enabled)
-        with tab1:
-            uploaded_files = st.file_uploader(
-                "Upload Financials (Batch Supported)", 
-                type=["pdf", "xml", "csv"], 
-                key="user_upload",
-                accept_multiple_files=True
-            )
-            
-            if uploaded_files and 'accountant' in st.session_state:
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                total_files = len(uploaded_files)
-                success_count = 0
-                
-                for i, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"Processing {i+1}/{total_files}: {uploaded_file.name}...")
-                    try:
-                        # 1. Save to TEMP first
-                        temp_path = f"temp_{uploaded_file.name}"
-                        with open(temp_path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                        
-                        # 2. Process with AI
-                        user_entity = st.session_state.get("entity_type", "Personal")
-                        st.session_state.accountant.process_document(
-                            temp_path, 
-                            current_user, 
-                            doc_type="financial",
-                            entity_type=user_entity
-                        )
-                        
-                        # 3. ARCHIVE IT (The Vault) 🏦
-                        vault_path = os.path.join(VAULT_DIR, uploaded_file.name)
-                        # Remove existing if overwriting
-                        if os.path.exists(vault_path):
-                            os.remove(vault_path)
-                        shutil.move(temp_path, vault_path)
-                        
-                        # 4. UPDATE DB with File Path
-                        supabase.table("transactions") \
-                            .update({"file_path": vault_path}) \
-                            .eq("username", current_user) \
-                            .is_("file_path", "null") \
-                            .execute()
+@app.post("/tax/calculate")
+def calculate_tax(request: TaxCalculationRequest):
+    """Uses the T1 Decision Engine to calculate tax."""
+    engine = T1DecisionEngine(tax_year=2024)
+    
+    # 1. Process Income Type
+    processed = engine.process_income_stream(request.income_type, request.amount)
+    
+    # 2. Estimate Tax
+    taxable_amt = Decimal(processed['taxable_amount'])
+    tax_result = engine.calculate_federal_tax(taxable_amt, return_breakdown=True)
+    
+    return {
+        "analysis": processed,
+        "tax_estimate": tax_result
+    }
+@app.post("/document/scan")
+async def scan_document(file: UploadFile = File(...)):
+    """
+    Receives a PDF file, scans it, and returns the text.
+    """
+    # Read the file bytes
+    content = await file.read()
 
-                        success_count += 1
-                    except Exception as e:
-                        st.error(f"Error on {uploaded_file.name}: {e}")
-                    
-                    progress_bar.progress((i + 1) / total_files)
-                
-                status_text.success(f"✅ Batch Complete! Files archived in '{VAULT_DIR}'.")
+    # Send to the OCR Engine
+    result = scan_pdf(content)
 
-        # TAB 2: TAX LIBRARY
-        with tab2:
-            st.info("Upload Tax Acts (XML/PDF) here.")
-            lib_file = st.file_uploader("Upload Knowledge", type=["pdf", "xml"], key="lib_upload")
-            if lib_file and 'accountant' in st.session_state:
-                with st.spinner("Ingesting Knowledge Base..."):
-                    temp_path = f"temp_{lib_file.name}"
-                    with open(temp_path, "wb") as f:
-                        f.write(lib_file.getbuffer())
-                    
-                    status = st.session_state.accountant.process_document(
-                        temp_path, 
-                        current_user, 
-                        doc_type="library"
-                    )
-                    st.success(status)
-                    if os.path.exists(temp_path): os.remove(temp_path)
-
-        st.divider()
-
-        # --- 3. REPORTS & AUDIT VIEWER 🕵️‍♂️ ---
-        st.header("📊 General Ledger & Viewer")
-        if st.button("🔄 Refresh Ledger"):
-            st.rerun()
-
-        try:
-            response = supabase.table("transactions") \
-                .select("*") \
-                .eq("username", current_user) \
-                .order("transaction_date", desc=True) \
-                .execute()
-            
-            df = pd.DataFrame(response.data)
-            
-            if not df.empty:
-                # Calculate Totals
-                if 'deductible_percent' in df.columns:
-                    df['write_off_value'] = df['amount'] * (df['deductible_percent'] / 100)
-                    total_write_off = df['write_off_value'].sum()
-                    st.metric("💰 Total Tax Write-off", f"${total_write_off:,.2f}")
-
-                st.subheader("📖 General Ledger (Click Row to View)")
-                st.info("👇 Click a row below. The receipt will appear HERE (below the table).")
-                
-                # Configure the interactive table
-                display_cols = ['receipt_number', 'transaction_date', 'vendor', 'item_description', 'amount', 'deductible_percent', 'file_path']
-                available_cols = [c for c in display_cols if c in df.columns]
-                
-                # INTERACTIVE TABLE
-                event = st.dataframe(
-                    df[available_cols], 
-                    hide_index=True, 
-                    use_container_width=True,
-                    on_select="rerun", 
-                    selection_mode="single-row"
-                )
-                
-                # RECEIPT VIEWER LOGIC 🖼️
-                if len(event.selection.rows) > 0:
-                    selected_index = event.selection.rows[0]
-                    selected_row = df.iloc[selected_index]
-                    
-                    st.divider()
-                    st.markdown(f"### 🔎 Inspecting Receipt #{selected_row.get('receipt_number', 'Unknown')}")
-                    
-                    file_path = selected_row.get("file_path")
-                    # Debug line to show path
-                    # st.write(f"System Path: {file_path}")
-                    
-                    if file_path and os.path.exists(file_path):
-                        st.success("✅ File Found in Vault.")
-                        import base64
-                        with open(file_path, "rb") as f:
-                            pdf_data = f.read()
-                            base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-                        
-                        # Use an iframe to display PDF
-                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-                        st.markdown(pdf_display, unsafe_allow_html=True)
-                    else:
-                        st.error("❌ File NOT found in Vault.")
-                        st.warning("Note: Old receipts uploaded before the Vault update were deleted/shredded. Only new uploads are saved.")
-                else:
-                    st.caption("Waiting for selection...")
-
-            else:
-                st.caption("No financial data found.")
-        except Exception as e:
-            st.error(f"Ledger Error: {e}")
-
-        # --- 4. BRAIN TRAINING ---
-        st.divider()
-        with st.expander("🧠 Teach 8law (Add Rules)"):
-            with st.form("learning_form"):
-                k_word = st.text_input("Keyword", placeholder="e.g. Paintbrush")
-                cat = st.text_input("Tax Category", placeholder="e.g. Art Supplies")
-                deduct = st.number_input("Deductible %", min_value=0, max_value=100, step=50)
-                if st.form_submit_button("Save Rule"):
-                    try:
-                        supabase.table("tax_learning_bank").insert({
-                            "keyword": k_word,
-                            "tax_category": cat,
-                            "deductible_percent": deduct
-                        }).execute()
-                        st.success(f"Learned: {k_word} = {deduct}%")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-
-    # --- MAIN CHAT AREA ---
-    st.title("8law Super Accountant")
-
-    # Load History
-    if "messages" not in st.session_state:
-        st.session_state.messages = load_history(current_user)
-
-    for message in st.session_state.messages:
-        if "role" in message and "content" in message:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-    if prompt := st.chat_input("Ask about your finances..."):
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        save_message(current_user, "user", prompt)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                history = st.session_state.messages[:-1]
-                if 'accountant' in st.session_state:
-                    response_data = st.session_state.accountant.process_input(prompt, history)
-                    answer = response_data.get("answer", "⚠️ No answer provided.")
-                    reasoning = response_data.get("reasoning", [])
-                    st.markdown(answer)
-                    with st.expander("View Logic"):
-                        st.write(reasoning)
-                else:
-                    st.error("⚠️ AI is offline.")
-        
-        if 'answer' in locals():
-            st.session_state.messages.append({"role": "assistant", "content": answer})
-            save_message(current_user, "assistant", answer)
+    return {
+        "filename": file.filename,
+        "scan_result": result
+    }

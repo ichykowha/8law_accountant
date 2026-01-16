@@ -1,4 +1,3 @@
-
 # ------------------------------------------------------------------------------
 # 8law - Super Accountant
 # Module: Canadian T1 Decision Engine (Logic Core)
@@ -7,261 +6,154 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# ------------------------------------------------------------------------------
-# 1. CORE TYPES & HELPERS
-# ------------------------------------------------------------------------------
+from .rules_registry import RulesRegistry, RulesRegistryError, get_year_config, load_rules_registry, read_decimal
+
 
 MoneyLike = Union[int, float, str, Decimal]
 
+
 def D(x: MoneyLike) -> Decimal:
-    """Safe Decimal conversion (avoid float artifacts)."""
+    """Safe Decimal conversion."""
     if isinstance(x, Decimal):
         return x
-    if isinstance(x, float):
-        return Decimal(str(x))
-    return Decimal(x)
+    return Decimal(str(x))
+
 
 def money(x: MoneyLike) -> Decimal:
-    """Quantize to cents using conventional rounding."""
+    """Quantize to cents."""
     return D(x).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+
 class IncomeType(str, Enum):
-    CAPITAL_GAINS = "CAPITAL_GAINS"
-    SELF_EMPLOYED = "SELF_EMPLOYED"
     EMPLOYMENT = "EMPLOYMENT"
-    DIVIDENDS = "DIVIDENDS" 
+    SELF_EMPLOYED = "SELF_EMPLOYED"
+    CAPITAL_GAINS = "CAPITAL_GAINS"
+    INTEREST = "INTEREST"
+    FOREIGN_INCOME = "FOREIGN_INCOME"
+    DIVIDENDS_ELIGIBLE_TAXABLE = "DIVIDENDS_ELIGIBLE_TAXABLE"
+    DIVIDENDS_NON_ELIGIBLE_TAXABLE = "DIVIDENDS_NON_ELIGIBLE_TAXABLE"
     OTHER = "OTHER"
 
     @staticmethod
     def normalize(value: Union["IncomeType", str]) -> "IncomeType":
         if isinstance(value, IncomeType):
             return value
-        v = (value or "").strip().upper()
-        synonyms = {
-            "T4": "EMPLOYMENT",
-            "EMPLOYMENT_INCOME": "EMPLOYMENT",
-            "BUSINESS_INCOME": "SELF_EMPLOYED",
-            "SELF_EMPLOYMENT": "SELF_EMPLOYED",
-            "CAP_GAIN": "CAPITAL_GAINS",
-            "CAPITALGAIN": "CAPITAL_GAINS",
-        }
-        v = synonyms.get(v, v)
+        v = str(value).strip().upper()
         try:
             return IncomeType(v)
         except ValueError:
             return IncomeType.OTHER
 
-class Province(str, Enum):
-    ON = "ON"
-    BC = "BC"
-    AB = "AB"
-    QC = "QC" # Note: QC has a separate tax system (Revenu Quebec), logic here approximates T1 Federal overlap.
-    # Add others as needed
-
-# ------------------------------------------------------------------------------
-# 2. TAX RULES REGISTRY (VERSIONED)
-# ------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class TaxConfig:
     tax_year: int
     fed_brackets: List[Tuple[Decimal, Decimal]]
-    prov_brackets: Dict[Province, List[Tuple[Decimal, Decimal]]]
     capital_gains_inclusion_rate: Decimal
-    rrsp_percent_limit: Decimal = Decimal("0.18")
-    rrsp_annual_max: Decimal = Decimal("31560")  # 2024 max
+    rrsp_percent_limit: Decimal
+    rrsp_dollar_limit: Decimal
 
-# 2024 Tax Rules (Federal + Major Provinces)
-# Source: CRA 2024 Indexed Brackets
-TAX_RULES: Dict[int, TaxConfig] = {
-    2024: TaxConfig(
-        tax_year=2024,
-        # Federal Brackets: (Upper Limit, Rate)
-        fed_brackets=[
-            (Decimal("55867.00"), Decimal("0.15")),
-            (Decimal("111733.00"), Decimal("0.205")),
-            (Decimal("173205.00"), Decimal("0.26")),
-            (Decimal("246752.00"), Decimal("0.29")),
-            (Decimal("999999999.99"), Decimal("0.33")),
-        ],
-        # Provincial Brackets (Simplified 2024 projections)
-        prov_brackets={
-            Province.ON: [
-                (Decimal("51446.00"), Decimal("0.0505")),
-                (Decimal("102894.00"), Decimal("0.0915")),
-                (Decimal("150000.00"), Decimal("0.1116")),
-                (Decimal("220000.00"), Decimal("0.1216")),
-                (Decimal("999999999.99"), Decimal("0.1316")),
-            ],
-            Province.BC: [
-                (Decimal("47937.00"), Decimal("0.0506")),
-                (Decimal("95875.00"), Decimal("0.077")),
-                (Decimal("110076.00"), Decimal("0.105")),
-                (Decimal("133664.00"), Decimal("0.1229")),
-                (Decimal("181232.00"), Decimal("0.147")),
-                (Decimal("999999999.99"), Decimal("0.168")), # simplified top tiers
-            ],
-            Province.AB: [
-                (Decimal("148269.00"), Decimal("0.10")),
-                (Decimal("177922.00"), Decimal("0.12")),
-                (Decimal("237230.00"), Decimal("0.13")),
-                (Decimal("355845.00"), Decimal("0.14")),
-                (Decimal("999999999.99"), Decimal("0.15")),
-            ]
-        },
-        capital_gains_inclusion_rate=Decimal("0.50"),
-        rrsp_annual_max=Decimal("31560")
+
+def _parse_brackets(year_cfg: Dict[str, Any]) -> List[Tuple[Decimal, Decimal]]:
+    fed = year_cfg.get("federal", {})
+    brackets = fed.get("brackets", [])
+    parsed = []
+    for b in brackets:
+        up_to = Decimal("999999999999.99") if str(b["up_to"]).lower() in ["inf", "infinity"] else D(b["up_to"])
+        rate = D(b["rate"])
+        parsed.append((up_to, rate))
+    return parsed
+
+
+def tax_config_from_registry(registry: RulesRegistry, tax_year: int) -> TaxConfig:
+    year_cfg = get_year_config(registry, tax_year)
+    brackets = _parse_brackets(year_cfg)
+    cg_rate = read_decimal(year_cfg, "capital_gains.default_inclusion_rate")
+    rrsp_percent = read_decimal(year_cfg, "rrsp.percent_limit")
+    rrsp_dollar = money(read_decimal(year_cfg, "rrsp.dollar_limit"))
+    
+    return TaxConfig(
+        tax_year=tax_year,
+        fed_brackets=brackets,
+        capital_gains_inclusion_rate=cg_rate,
+        rrsp_percent_limit=rrsp_percent,
+        rrsp_dollar_limit=rrsp_dollar,
     )
-}
 
-# ------------------------------------------------------------------------------
-# 3. NOA DATA STRUCTURE
-# ------------------------------------------------------------------------------
-
-@dataclass
-class NoticeOfAssessment:
-    """
-    Represents data parsed from the user's uploaded NOA (Last Year).
-    This is critical for accurate RRSP calculation.
-    """
-    tax_year: int
-    earned_income_previous_year: Decimal
-    rrsp_deduction_limit_current_year: Decimal # The "Room" CRA says you have
-    unused_contributions: Decimal = Decimal("0.00") # Contributions made but not deducted
-
-# ------------------------------------------------------------------------------
-# 4. THE DECISION ENGINE
-# ------------------------------------------------------------------------------
 
 class T1DecisionEngine:
-    def __init__(self, tax_year: int = 2024):
-        if tax_year not in TAX_RULES:
-            raise ValueError(f"Unsupported tax_year={tax_year}.")
-        self.cfg = TAX_RULES[tax_year]
+    def __init__(self, tax_year: int = 2024, registry: Optional[RulesRegistry] = None):
+        self.tax_year = tax_year
+        self.registry = registry or load_rules_registry()
+        self.cfg = tax_config_from_registry(self.registry, tax_year)
 
     def process_income_stream(self, income_type: Union[IncomeType, str], raw_amount: MoneyLike) -> Dict[str, Any]:
-        """
-        Calculates 'Taxable Income' based on Canadian inclusions.
-        """
+        """Normalize raw money into taxable money."""
         itype = IncomeType.normalize(income_type)
         amt = money(raw_amount)
+        
+        # Default response structure (ensures 'taxable_amount' always exists)
+        response = {
+            "status": "OK",
+            "tax_year": self.cfg.tax_year,
+            "income_type": itype.value,
+            "original_amount": str(amt),
+            "taxable_amount": str(amt),  # Default: 100% inclusion
+            "logic_applied": "Standard inclusion (100%).",
+            "meta": {}
+        }
 
         if itype == IncomeType.CAPITAL_GAINS:
             rate = self.cfg.capital_gains_inclusion_rate
             taxable = money(amt * rate)
-            note = f"Capital gains inclusion (Rate: {rate})"
+            response["taxable_amount"] = str(taxable)
+            response["logic_applied"] = f"Capital gain inclusion rate applied: {rate}"
+
+        elif itype == IncomeType.SELF_EMPLOYED:
+            response["logic_applied"] = "Self-employment income: taxable at 100%."
+
         elif itype == IncomeType.EMPLOYMENT:
-            taxable = amt
-            note = "Fully taxable Employment Income"
-        else:
-            taxable = amt
-            note = "Standard Income"
-
-        return {
-            "type": itype.value,
-            "original": str(amt),
-            "taxable": str(taxable),
-            "note": note
-        }
-
-    def calculate_combined_tax(
-        self, 
-        taxable_income: MoneyLike, 
-        province: Union[Province, str] = Province.ON
-    ) -> Dict[str, Any]:
-        """
-        Calculates BOTH Federal and Provincial tax.
-        """
-        income = money(taxable_income)
-        
-        # 1. Calculate Federal
-        fed_tax = self._calculate_brackets(income, self.cfg.fed_brackets)
-        
-        # 2. Calculate Provincial
-        prov_enum = Province(province) if isinstance(province, str) else province
-        if prov_enum not in self.cfg.prov_brackets:
-            raise ValueError(f"Provincial rates for {prov_enum} not defined in config.")
+            response["logic_applied"] = "Employment income: taxable at 100%."
             
-        prov_tax = self._calculate_brackets(income, self.cfg.prov_brackets[prov_enum])
-        
-        total_tax = fed_tax + prov_tax
-        
-        return {
-            "province": prov_enum.value,
-            "taxable_income": str(income),
-            "federal_tax": str(fed_tax),
-            "provincial_tax": str(prov_tax),
-            "total_estimated_tax": str(total_tax),
-            "average_tax_rate": str(money((total_tax / income) * 100)) if income > 0 else "0.00"
-        }
+        elif itype == IncomeType.OTHER:
+            response["status"] = "REVIEW"
+            response["logic_applied"] = "Unmapped income type; defaulted to fully taxable."
 
-    def _calculate_brackets(self, income: Decimal, brackets: List[Tuple[Decimal, Decimal]]) -> Decimal:
-        """Internal helper for progressive bracket math."""
+        return response
+
+    def calculate_federal_tax(self, taxable_income: MoneyLike, return_breakdown: bool = False) -> Union[Decimal, Dict[str, Any]]:
+        income = money(taxable_income)
         remaining = income
         previous_limit = Decimal("0.00")
-        total_tax = Decimal("0.00")
+        tax_owing = Decimal("0.00")
+        breakdown = []
 
-        for limit, rate in brackets:
+        for upper, rate in self.cfg.fed_brackets:
             if remaining <= 0:
                 break
+            bracket_span = upper - previous_limit
+            in_bracket = min(remaining, bracket_span)
+            chunk_tax = money(in_bracket * rate)
+            tax_owing += chunk_tax
             
-            bracket_span = limit - previous_limit
-            taxable_in_bracket = min(remaining, bracket_span)
-            
-            total_tax += taxable_in_bracket * rate
-            
-            remaining -= taxable_in_bracket
-            previous_limit = limit
-            
-        return money(total_tax)
+            breakdown.append({
+                "rate": str(rate),
+                "taxable_in_bracket": str(in_bracket),
+                "tax_for_bracket": str(chunk_tax)
+            })
+            remaining -= in_bracket
+            previous_limit = upper
 
-    def optimize_rrsp_dynamic(
-        self, 
-        contribution_amount: MoneyLike, 
-        noa_data: Optional[NoticeOfAssessment] = None,
-        estimated_current_income: MoneyLike = 0
-    ) -> Dict[str, Any]:
-        """
-        RRSP LOGIC V2:
-        If NOA is present, use exact CRA limit.
-        If NOA is missing, estimate based on 18% of current income (Fallback).
-        """
-        contrib = money(contribution_amount)
-
-        if noa_data:
-            # ACCURATE PATH: We have the user's uploaded NOA
-            limit = noa_data.rrsp_deduction_limit_current_year
-            source = "CRA Notice of Assessment (Exact)"
-        else:
-            # FALLBACK PATH: We guess based on current income
-            # (Note: This is risky because it ignores previous years, but necessary if no NOA)
-            est_income = money(estimated_current_income)
-            calc_limit = est_income * self.cfg.rrsp_percent_limit
-            limit = min(calc_limit, self.cfg.rrsp_annual_max)
-            source = "Estimated (18% of Current Income) - UPLOAD NOA FOR EXACT LIMIT"
-
-        # The 'Buffer' - CRA allows $2,000 over-contribution without immediate penalty
-        over_contribution_buffer = Decimal("2000.00")
+        tax_owing = money(tax_owing)
         
-        if contrib > (limit + over_contribution_buffer):
-            status = "DANGER"
-            msg = f"Over-contribution of ${contrib - limit}. Penalty of 1%/month applies."
-        elif contrib > limit:
-            status = "WARNING"
-            msg = f"Exceeds deduction limit by ${contrib - limit}, but within $2k safety buffer."
-        else:
-            status = "OPTIMAL"
-            msg = "Contribution is within safe limits."
-
-        return {
-            "status": status,
-            "contribution_amount": str(contrib),
-            "deduction_limit": str(limit),
-            "limit_source": source,
-            "message": msg
-        }
+        if return_breakdown:
+            return {
+                "federal_tax_before_credits": str(tax_owing),
+                "bracket_breakdown": breakdown
+            }
+        return tax_owing

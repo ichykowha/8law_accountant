@@ -3,3 +3,4 @@ __pycache__/
 accountant_pi.db
 data/uploads/*
 .env
+app/.streamlit/secrets.toml

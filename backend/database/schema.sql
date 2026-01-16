@@ -82,3 +82,31 @@ CREATE TABLE audit_logs (
     details TEXT,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+-- 6. IMMUTABLE LEDGER (The Internal Blockchain)
+-- This table stores the cryptographic "Seals" for every tax return.
+-- If anyone alters the 'tax_returns' table, the hashes here will fail to match,
+-- triggering a security alert.
+
+CREATE TABLE blockchain_ledger (
+    block_id SERIAL PRIMARY KEY, -- 1, 2, 3 (The height of the chain)
+    
+    -- The "Payload" we are sealing (e.g., The UUID of the Tax Return)
+    entity_id UUID NOT NULL,
+    entity_type VARCHAR(50) NOT NULL, -- 'TAX_RETURN', 'NOA'
+    
+    -- The Digital Fingerprint of the data at that moment
+    data_hash VARCHAR(64) NOT NULL, -- SHA-256 Hash
+    
+    -- The Link to the Previous Block (The Chain)
+    previous_block_hash VARCHAR(64) NOT NULL,
+    
+    -- The Timestamp and Nonce (for uniqueness)
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    nonce VARCHAR(32),
+    
+    -- Final "Seal" of this block (Hash of current data + previous hash)
+    block_hash VARCHAR(64) NOT NULL UNIQUE
+);
+
+-- Index for speed verification
+CREATE INDEX idx_chain_order ON blockchain_ledger(block_id);

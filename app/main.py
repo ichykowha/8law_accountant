@@ -1,8 +1,10 @@
+print("MAIN.PY LOADED SUCCESSFULLY")
 # ------------------------------------------------------------------------------
 # 8law - Super Accountant
 # Module: Main API Application (FastAPI)
 # File: app/main.py
 # ------------------------------------------------------------------------------
+
 
 import sys
 import os

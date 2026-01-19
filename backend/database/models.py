@@ -15,12 +15,20 @@ Base = declarative_base()
 
 class User(Base):
     __tablename__ = 'users'
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, nullable=False)
-    # Relationships
+
+    password_hash = Column(String, nullable=False)
+    legal_first_name = Column(String, nullable=True)
+    legal_last_name = Column(String, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
     tax_returns = relationship("TaxReturn", back_populates="user")
     noas = relationship("NoticeOfAssessment", back_populates="user")
+
 
 class NoticeOfAssessment(Base):
     """

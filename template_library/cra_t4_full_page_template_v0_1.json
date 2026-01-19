@@ -1,0 +1,1537 @@
+{
+  "template_id": "cra_t4_full_page",
+  "name": "CRA T4 (23) \u2013 Full Page (Two Slips)",
+  "version": "0.1.0",
+  "status": "draft",
+  "source": {
+    "derived_from": "cra_t4_single_slip_v0_1",
+    "page": 1
+  },
+  "canvas": {
+    "width_px": 3060,
+    "height_px": 3960,
+    "units": "normalized"
+  },
+  "assets": {
+    "template_image_uri": "local:/mnt/data/t4_full_page_template.png",
+    "source_pdf": "local:/mnt/data/t4_slip.pdf",
+    "render_zoom_used": 5.0
+  },
+  "anchors": {
+    "mode": "four_corners",
+    "points": {
+      "top_left": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "top_right": {
+        "x": 1.0,
+        "y": 0.0
+      },
+      "bottom_right": {
+        "x": 1.0,
+        "y": 1.0
+      },
+      "bottom_left": {
+        "x": 0.0,
+        "y": 1.0
+      }
+    }
+  },
+  "regions": {
+    "top_slip_bbox": {
+      "x": 0.041176470588235294,
+      "y": 0.08383838383838384,
+      "w": 0.7843137254901961,
+      "h": 0.39646464646464646
+    },
+    "bottom_slip_bbox": {
+      "x": 0.04150326797385621,
+      "y": 0.5732323232323232,
+      "w": 0.7843137254901961,
+      "h": 0.39646464646464646
+    }
+  },
+  "slips": {
+    "top": {
+      "origin_px": {
+        "x": 126,
+        "y": 332
+      },
+      "size_px": {
+        "w": 2400,
+        "h": 1570
+      },
+      "match_confidence": 0.08524621278047562
+    },
+    "bottom": {
+      "origin_px": {
+        "x": 127,
+        "y": 2270
+      },
+      "size_px": {
+        "w": 2400,
+        "h": 1570
+      },
+      "match_confidence": 0.07891468703746796
+    }
+  },
+  "fields": [
+    {
+      "key": "top_employer_name",
+      "label": "Top \u2013 Employer's name",
+      "type": "text",
+      "bbox": {
+        "x": 0.07091529411764706,
+        "y": 0.09116148232323232,
+        "w": 0.2885623529411765,
+        "h": 0.07500001010101011
+      }
+    },
+    {
+      "key": "top_year",
+      "label": "Top \u2013 Year",
+      "type": "year",
+      "validators": {
+        "min_len": 4,
+        "max_len": 4,
+        "allowed_chars": "0123456789"
+      },
+      "bbox": {
+        "x": 0.4114376470588235,
+        "y": 0.1065657196969697,
+        "w": 0.07810431372549019,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_employer_account_number_box54",
+      "label": "Top \u2013 Employer's account number (Box 54)",
+      "type": "text",
+      "validators": {
+        "min_len": 9,
+        "max_len": 15
+      },
+      "bbox": {
+        "x": 0.09019607843137255,
+        "y": 0.17373753535353534,
+        "w": 0.2696078431372549,
+        "h": 0.024999871212121213
+      }
+    },
+    {
+      "key": "top_social_insurance_number_box12",
+      "label": "Top \u2013 Social insurance number (Box 12)",
+      "type": "sin",
+      "validators": {
+        "min_len": 9,
+        "max_len": 9,
+        "allowed_chars": "0123456789"
+      },
+      "bbox": {
+        "x": 0.09019607843137255,
+        "y": 0.2217172904040404,
+        "w": 0.16666666666666666,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_province_of_employment_box10",
+      "label": "Top \u2013 Province of employment (Box 10)",
+      "type": "province_code",
+      "validators": {
+        "min_len": 2,
+        "max_len": 2,
+        "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      },
+      "bbox": {
+        "x": 0.4065356862745098,
+        "y": 0.19595977525252525,
+        "w": 0.038888627450980394,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_employment_code_box29",
+      "label": "Top \u2013 Employment code (Box 29)",
+      "type": "text",
+      "validators": {
+        "min_len": 1,
+        "max_len": 2,
+        "allowed_chars": "0123456789"
+      },
+      "bbox": {
+        "x": 0.4065356862745098,
+        "y": 0.23686858333333333,
+        "w": 0.038888627450980394,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_employer_offered_dental_benefits_box45",
+      "label": "Top \u2013 Employer-offered dental benefits (Box 45)",
+      "type": "text",
+      "validators": {
+        "min_len": 0,
+        "max_len": 1
+      },
+      "bbox": {
+        "x": 0.4065356862745098,
+        "y": 0.15833329797979798,
+        "w": 0.038888627450980394,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_employment_income_box14",
+      "label": "Top \u2013 Employment income (Box 14)",
+      "type": "money",
+      "box_number": "14",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.48954274509803924,
+        "y": 0.1441918005050505,
+        "w": 0.0996729411764706,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.5892156862745098,
+        "y": 0.1441918005050505,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.48954274509803924,
+        "y": 0.1441918005050505,
+        "w": 0.14215686274509803,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_income_tax_deducted_box22",
+      "label": "Top \u2013 Income tax deducted (Box 22)",
+      "type": "money",
+      "box_number": "22",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.6565356862745098,
+        "y": 0.1454545404040404,
+        "w": 0.11405254901960783,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.7705882352941177,
+        "y": 0.1454545404040404,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.6565356862745098,
+        "y": 0.1454545404040404,
+        "w": 0.1565356862745098,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_employee_cpp_contrib_box16",
+      "label": "Top \u2013 Employee's CPP contributions (Box 16)",
+      "type": "money",
+      "box_number": "16",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.4898690196078431,
+        "y": 0.18080808585858585,
+        "w": 0.09934666666666668,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.5892156862745098,
+        "y": 0.18080808585858585,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.4898690196078431,
+        "y": 0.18080808585858585,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_employee_qpp_contrib_box17",
+      "label": "Top \u2013 Employee's QPP contributions (Box 17)",
+      "type": "money",
+      "box_number": "17",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.6709152941176469,
+        "y": 0.18106063383838383,
+        "w": 0.09934666666666668,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.7705882352941177,
+        "y": 0.18106063383838383,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.6709152941176469,
+        "y": 0.18106063383838383,
+        "w": 0.14215686274509803,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_employee_second_cpp_contrib_box16A",
+      "label": "Top \u2013 Employee's second CPP contributions (Box 16A)",
+      "type": "money",
+      "box_number": "16A",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.4898690196078431,
+        "y": 0.2204545505050505,
+        "w": 0.09934666666666668,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.5892156862745098,
+        "y": 0.2204545505050505,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.4898690196078431,
+        "y": 0.2204545505050505,
+        "w": 0.14182980392156863,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_employee_second_qpp_contrib_box17A",
+      "label": "Top \u2013 Employee's second QPP contributions (Box 17A)",
+      "type": "money",
+      "box_number": "17A",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.6709152941176469,
+        "y": 0.2204545505050505,
+        "w": 0.09934666666666668,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.7705882352941177,
+        "y": 0.2204545505050505,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.6709152941176469,
+        "y": 0.2204545505050505,
+        "w": 0.14215686274509803,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_ei_insurable_earnings_box24",
+      "label": "Top \u2013 EI insurable earnings (Box 24)",
+      "type": "money",
+      "box_number": "24",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.4898690196078431,
+        "y": 0.2545453560606061,
+        "w": 0.09934666666666668,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.5895427450980393,
+        "y": 0.2545453560606061,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.4898690196078431,
+        "y": 0.2545453560606061,
+        "w": 0.14215686274509803,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_cpp_qpp_pensionable_earnings_box26",
+      "label": "Top \u2013 CPP/QPP pensionable earnings (Box 26)",
+      "type": "money",
+      "box_number": "26",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.671241568627451,
+        "y": 0.2540402601010101,
+        "w": 0.09934666666666668,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.7709152941176471,
+        "y": 0.2540402601010101,
+        "w": 0.04215686274509804,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.671241568627451,
+        "y": 0.2540402601010101,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_employee_ei_premiums_box18",
+      "label": "Top \u2013 Employee's EI premiums (Box 18)",
+      "type": "money",
+      "box_number": "18",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.4898690196078431,
+        "y": 0.2876263661616162,
+        "w": 0.09901960784313725,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.5892156862745098,
+        "y": 0.2876263661616162,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.4898690196078431,
+        "y": 0.2876263661616162,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_union_dues_box44",
+      "label": "Top \u2013 Union dues (Box 44)",
+      "type": "money",
+      "box_number": "44",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.671241568627451,
+        "y": 0.2876263661616162,
+        "w": 0.09901960784313725,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.7705882352941177,
+        "y": 0.2876263661616162,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.671241568627451,
+        "y": 0.2876263661616162,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_rpp_contrib_box20",
+      "label": "Top \u2013 RPP contributions (Box 20)",
+      "type": "money",
+      "box_number": "20",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.4898690196078431,
+        "y": 0.32171717171717173,
+        "w": 0.09934666666666668,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.5892156862745098,
+        "y": 0.32171717171717173,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.4898690196078431,
+        "y": 0.32171717171717173,
+        "w": 0.14182980392156863,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_charitable_donations_box46",
+      "label": "Top \u2013 Charitable donations (Box 46)",
+      "type": "money",
+      "box_number": "46",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.671241568627451,
+        "y": 0.32171717171717173,
+        "w": 0.09901960784313725,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.7705882352941177,
+        "y": 0.32171717171717173,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.671241568627451,
+        "y": 0.32171717171717173,
+        "w": 0.14182980392156863,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "top_pension_adjustment_box52",
+      "label": "Top \u2013 Pension adjustment (Box 52)",
+      "type": "money",
+      "box_number": "52",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.4898690196078431,
+        "y": 0.3555554292929293,
+        "w": 0.09901960784313725,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.5892156862745098,
+        "y": 0.3555554292929293,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.4898690196078431,
+        "y": 0.3555554292929293,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_rpp_or_dpsp_registration_number_box50",
+      "label": "Top \u2013 RPP or DPSP registration number (Box 50)",
+      "type": "text",
+      "box_number": "50",
+      "validators": {
+        "min_len": 0,
+        "max_len": 20,
+        "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+      },
+      "bbox": {
+        "x": 0.671241568627451,
+        "y": 0.3555554292929293,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_ppip_premiums_box55",
+      "label": "Top \u2013 Employee's PPIP premiums (Box 55)",
+      "type": "money",
+      "box_number": "55",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.4898690196078431,
+        "y": 0.3904038787878788,
+        "w": 0.09934666666666668,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.5892156862745098,
+        "y": 0.3904038787878788,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.4898690196078431,
+        "y": 0.3904038787878788,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_ppip_insurable_earnings_box56",
+      "label": "Top \u2013 PPIP insurable earnings (Box 56)",
+      "type": "money",
+      "box_number": "56",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.671241568627451,
+        "y": 0.3904038787878788,
+        "w": 0.09901960784313725,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.7705882352941177,
+        "y": 0.3904038787878788,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.671241568627451,
+        "y": 0.3904038787878788,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "top_employee_name_address_block",
+      "label": "Top \u2013 Employee's name and address block",
+      "type": "text_block",
+      "bbox": {
+        "x": 0.07091529411764706,
+        "y": 0.2593433712121212,
+        "w": 0.3888886274509804,
+        "h": 0.14520200505050507
+      }
+    },
+    {
+      "key": "top_employee_name_line",
+      "label": "Top \u2013 Employee name line (last/first/initial)",
+      "type": "text",
+      "bbox": {
+        "x": 0.09052313725490196,
+        "y": 0.2845957904040404,
+        "w": 0.35032705882352944,
+        "h": 0.018181868686868684
+      }
+    },
+    {
+      "key": "bottom_employer_name",
+      "label": "Bottom \u2013 Employer's name",
+      "type": "text",
+      "bbox": {
+        "x": 0.07124209150326798,
+        "y": 0.5805554217171718,
+        "w": 0.2885623529411765,
+        "h": 0.07500001010101011
+      }
+    },
+    {
+      "key": "bottom_year",
+      "label": "Bottom \u2013 Year",
+      "type": "year",
+      "validators": {
+        "min_len": 4,
+        "max_len": 4,
+        "allowed_chars": "0123456789"
+      },
+      "bbox": {
+        "x": 0.41176444444444443,
+        "y": 0.5959596590909091,
+        "w": 0.07810431372549019,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_employer_account_number_box54",
+      "label": "Bottom \u2013 Employer's account number (Box 54)",
+      "type": "text",
+      "validators": {
+        "min_len": 9,
+        "max_len": 15
+      },
+      "bbox": {
+        "x": 0.09052287581699346,
+        "y": 0.6631314747474748,
+        "w": 0.2696078431372549,
+        "h": 0.024999871212121213
+      }
+    },
+    {
+      "key": "bottom_social_insurance_number_box12",
+      "label": "Bottom \u2013 Social insurance number (Box 12)",
+      "type": "sin",
+      "validators": {
+        "min_len": 9,
+        "max_len": 9,
+        "allowed_chars": "0123456789"
+      },
+      "bbox": {
+        "x": 0.09052287581699346,
+        "y": 0.7111112297979798,
+        "w": 0.16666666666666666,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_province_of_employment_box10",
+      "label": "Bottom \u2013 Province of employment (Box 10)",
+      "type": "province_code",
+      "validators": {
+        "min_len": 2,
+        "max_len": 2,
+        "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      },
+      "bbox": {
+        "x": 0.4068624836601307,
+        "y": 0.6853537146464647,
+        "w": 0.038888627450980394,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_employment_code_box29",
+      "label": "Bottom \u2013 Employment code (Box 29)",
+      "type": "text",
+      "validators": {
+        "min_len": 1,
+        "max_len": 2,
+        "allowed_chars": "0123456789"
+      },
+      "bbox": {
+        "x": 0.4068624836601307,
+        "y": 0.7262625227272727,
+        "w": 0.038888627450980394,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_employer_offered_dental_benefits_box45",
+      "label": "Bottom \u2013 Employer-offered dental benefits (Box 45)",
+      "type": "text",
+      "validators": {
+        "min_len": 0,
+        "max_len": 1
+      },
+      "bbox": {
+        "x": 0.4068624836601307,
+        "y": 0.6477272373737374,
+        "w": 0.038888627450980394,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_employment_income_box14",
+      "label": "Bottom \u2013 Employment income (Box 14)",
+      "type": "money",
+      "box_number": "14",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.48986954248366016,
+        "y": 0.6335857398989899,
+        "w": 0.0996729411764706,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.5895424836601307,
+        "y": 0.6335857398989899,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.48986954248366016,
+        "y": 0.6335857398989899,
+        "w": 0.14215686274509803,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_income_tax_deducted_box22",
+      "label": "Bottom \u2013 Income tax deducted (Box 22)",
+      "type": "money",
+      "box_number": "22",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.6568624836601307,
+        "y": 0.6348484797979798,
+        "w": 0.11405254901960783,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.7709150326797386,
+        "y": 0.6348484797979798,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.6568624836601307,
+        "y": 0.6348484797979798,
+        "w": 0.1565356862745098,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_employee_cpp_contrib_box16",
+      "label": "Bottom \u2013 Employee's CPP contributions (Box 16)",
+      "type": "money",
+      "box_number": "16",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.49019581699346404,
+        "y": 0.6702020252525253,
+        "w": 0.09934666666666668,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.5895424836601307,
+        "y": 0.6702020252525253,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.49019581699346404,
+        "y": 0.6702020252525253,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_employee_qpp_contrib_box17",
+      "label": "Bottom \u2013 Employee's QPP contributions (Box 17)",
+      "type": "money",
+      "box_number": "17",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.6712420915032679,
+        "y": 0.6704545732323233,
+        "w": 0.09934666666666668,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.7709150326797386,
+        "y": 0.6704545732323233,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.6712420915032679,
+        "y": 0.6704545732323233,
+        "w": 0.14215686274509803,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_employee_second_cpp_contrib_box16A",
+      "label": "Bottom \u2013 Employee's second CPP contributions (Box 16A)",
+      "type": "money",
+      "box_number": "16A",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.49019581699346404,
+        "y": 0.7098484898989899,
+        "w": 0.09934666666666668,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.5895424836601307,
+        "y": 0.7098484898989899,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.49019581699346404,
+        "y": 0.7098484898989899,
+        "w": 0.14182980392156863,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_employee_second_qpp_contrib_box17A",
+      "label": "Bottom \u2013 Employee's second QPP contributions (Box 17A)",
+      "type": "money",
+      "box_number": "17A",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.6712420915032679,
+        "y": 0.7098484898989899,
+        "w": 0.09934666666666668,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.7709150326797386,
+        "y": 0.7098484898989899,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.6712420915032679,
+        "y": 0.7098484898989899,
+        "w": 0.14215686274509803,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_ei_insurable_earnings_box24",
+      "label": "Bottom \u2013 EI insurable earnings (Box 24)",
+      "type": "money",
+      "box_number": "24",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.49019581699346404,
+        "y": 0.7439392954545454,
+        "w": 0.09934666666666668,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.5898695424836602,
+        "y": 0.7439392954545454,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.49019581699346404,
+        "y": 0.7439392954545454,
+        "w": 0.14215686274509803,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_cpp_qpp_pensionable_earnings_box26",
+      "label": "Bottom \u2013 CPP/QPP pensionable earnings (Box 26)",
+      "type": "money",
+      "box_number": "26",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.671568366013072,
+        "y": 0.7434341994949495,
+        "w": 0.09934666666666668,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.7712420915032681,
+        "y": 0.7434341994949495,
+        "w": 0.04215686274509804,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.671568366013072,
+        "y": 0.7434341994949495,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_employee_ei_premiums_box18",
+      "label": "Bottom \u2013 Employee's EI premiums (Box 18)",
+      "type": "money",
+      "box_number": "18",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.49019581699346404,
+        "y": 0.7770203055555556,
+        "w": 0.09901960784313725,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.5895424836601307,
+        "y": 0.7770203055555556,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.49019581699346404,
+        "y": 0.7770203055555556,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_union_dues_box44",
+      "label": "Bottom \u2013 Union dues (Box 44)",
+      "type": "money",
+      "box_number": "44",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.671568366013072,
+        "y": 0.7770203055555556,
+        "w": 0.09901960784313725,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.7709150326797386,
+        "y": 0.7770203055555556,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.671568366013072,
+        "y": 0.7770203055555556,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_rpp_contrib_box20",
+      "label": "Bottom \u2013 RPP contributions (Box 20)",
+      "type": "money",
+      "box_number": "20",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.49019581699346404,
+        "y": 0.8111111111111111,
+        "w": 0.09934666666666668,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.5895424836601307,
+        "y": 0.8111111111111111,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.49019581699346404,
+        "y": 0.8111111111111111,
+        "w": 0.14182980392156863,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_charitable_donations_box46",
+      "label": "Bottom \u2013 Charitable donations (Box 46)",
+      "type": "money",
+      "box_number": "46",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.671568366013072,
+        "y": 0.8111111111111111,
+        "w": 0.09901960784313725,
+        "h": 0.01868696464646465
+      },
+      "bbox_cents": {
+        "x": 0.7709150326797386,
+        "y": 0.8111111111111111,
+        "w": 0.04248392156862745,
+        "h": 0.01868696464646465
+      },
+      "bbox_full": {
+        "x": 0.671568366013072,
+        "y": 0.8111111111111111,
+        "w": 0.14182980392156863,
+        "h": 0.01868696464646465
+      }
+    },
+    {
+      "key": "bottom_pension_adjustment_box52",
+      "label": "Bottom \u2013 Pension adjustment (Box 52)",
+      "type": "money",
+      "box_number": "52",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.49019581699346404,
+        "y": 0.8449493686868687,
+        "w": 0.09901960784313725,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.5895424836601307,
+        "y": 0.8449493686868687,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.49019581699346404,
+        "y": 0.8449493686868687,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_rpp_or_dpsp_registration_number_box50",
+      "label": "Bottom \u2013 RPP or DPSP registration number (Box 50)",
+      "type": "text",
+      "box_number": "50",
+      "validators": {
+        "min_len": 0,
+        "max_len": 20,
+        "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+      },
+      "bbox": {
+        "x": 0.671568366013072,
+        "y": 0.8449493686868687,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_ppip_premiums_box55",
+      "label": "Bottom \u2013 Employee's PPIP premiums (Box 55)",
+      "type": "money",
+      "box_number": "55",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.49019581699346404,
+        "y": 0.8797978181818181,
+        "w": 0.09934666666666668,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.5895424836601307,
+        "y": 0.8797978181818181,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.49019581699346404,
+        "y": 0.8797978181818181,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_ppip_insurable_earnings_box56",
+      "label": "Bottom \u2013 PPIP insurable earnings (Box 56)",
+      "type": "money",
+      "box_number": "56",
+      "validators": {
+        "allowed_chars": "0123456789",
+        "decimals": 2
+      },
+      "bbox_dollars": {
+        "x": 0.671568366013072,
+        "y": 0.8797978181818181,
+        "w": 0.09901960784313725,
+        "h": 0.018939512626262627
+      },
+      "bbox_cents": {
+        "x": 0.7709150326797386,
+        "y": 0.8797978181818181,
+        "w": 0.04248392156862745,
+        "h": 0.018939512626262627
+      },
+      "bbox_full": {
+        "x": 0.671568366013072,
+        "y": 0.8797978181818181,
+        "w": 0.14182980392156863,
+        "h": 0.018939512626262627
+      }
+    },
+    {
+      "key": "bottom_employee_name_address_block",
+      "label": "Bottom \u2013 Employee's name and address block",
+      "type": "text_block",
+      "bbox": {
+        "x": 0.07124209150326798,
+        "y": 0.7487373106060606,
+        "w": 0.3888886274509804,
+        "h": 0.14520200505050507
+      }
+    },
+    {
+      "key": "bottom_employee_name_line",
+      "label": "Bottom \u2013 Employee name line (last/first/initial)",
+      "type": "text",
+      "bbox": {
+        "x": 0.09084993464052288,
+        "y": 0.7739897297979799,
+        "w": 0.35032705882352944,
+        "h": 0.018181868686868684
+      }
+    }
+  ],
+  "repeat_groups": {
+    "top_other_information": [
+      {
+        "key": "other_info_1",
+        "bbox_box_number": {
+          "x": 0.16143764705882352,
+          "y": 0.42424253282828284,
+          "w": 0.038888627450980394,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_dollars": {
+          "x": 0.21045725490196077,
+          "y": 0.42424253282828284,
+          "w": 0.11339843137254901,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_cents": {
+          "x": 0.3238564705882353,
+          "y": 0.42424253282828284,
+          "w": 0.043137254901960784,
+          "h": 0.01868696464646465
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_2",
+        "bbox_box_number": {
+          "x": 0.3843137254901961,
+          "y": 0.42424253282828284,
+          "w": 0.0392156862745098,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_dollars": {
+          "x": 0.43333333333333335,
+          "y": 0.42424253282828284,
+          "w": 0.11372549019607843,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_cents": {
+          "x": 0.5470588235294118,
+          "y": 0.42424253282828284,
+          "w": 0.04248392156862745,
+          "h": 0.01868696464646465
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_3",
+        "bbox_box_number": {
+          "x": 0.6075160784313726,
+          "y": 0.42424253282828284,
+          "w": 0.038888627450980394,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_dollars": {
+          "x": 0.6565356862745098,
+          "y": 0.42424253282828284,
+          "w": 0.11405254901960783,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_cents": {
+          "x": 0.7705882352941177,
+          "y": 0.42424253282828284,
+          "w": 0.04248392156862745,
+          "h": 0.01868696464646465
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_4",
+        "bbox_box_number": {
+          "x": 0.16143764705882352,
+          "y": 0.45277767929292934,
+          "w": 0.038888627450980394,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_dollars": {
+          "x": 0.21045725490196077,
+          "y": 0.45277767929292934,
+          "w": 0.11339843137254901,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_cents": {
+          "x": 0.32418274509803924,
+          "y": 0.45277767929292934,
+          "w": 0.042810196078431374,
+          "h": 0.018939512626262627
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_5",
+        "bbox_box_number": {
+          "x": 0.3843137254901961,
+          "y": 0.45277767929292934,
+          "w": 0.0392156862745098,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_dollars": {
+          "x": 0.43333333333333335,
+          "y": 0.45277767929292934,
+          "w": 0.11339843137254901,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_cents": {
+          "x": 0.5470588235294118,
+          "y": 0.45277767929292934,
+          "w": 0.04248392156862745,
+          "h": 0.018939512626262627
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_6",
+        "bbox_box_number": {
+          "x": 0.6075160784313726,
+          "y": 0.45277767929292934,
+          "w": 0.038888627450980394,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_dollars": {
+          "x": 0.6565356862745098,
+          "y": 0.45277767929292934,
+          "w": 0.11372549019607843,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_cents": {
+          "x": 0.7705882352941177,
+          "y": 0.45277767929292934,
+          "w": 0.04248392156862745,
+          "h": 0.018939512626262627
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      }
+    ],
+    "bottom_other_information": [
+      {
+        "key": "other_info_1",
+        "bbox_box_number": {
+          "x": 0.16176444444444443,
+          "y": 0.9136364722222222,
+          "w": 0.038888627450980394,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_dollars": {
+          "x": 0.21078405228758168,
+          "y": 0.9136364722222222,
+          "w": 0.11339843137254901,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_cents": {
+          "x": 0.3241832679738562,
+          "y": 0.9136364722222222,
+          "w": 0.043137254901960784,
+          "h": 0.01868696464646465
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_2",
+        "bbox_box_number": {
+          "x": 0.384640522875817,
+          "y": 0.9136364722222222,
+          "w": 0.0392156862745098,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_dollars": {
+          "x": 0.43366013071895426,
+          "y": 0.9136364722222222,
+          "w": 0.11372549019607843,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_cents": {
+          "x": 0.5473856209150327,
+          "y": 0.9136364722222222,
+          "w": 0.04248392156862745,
+          "h": 0.01868696464646465
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_3",
+        "bbox_box_number": {
+          "x": 0.6078428758169935,
+          "y": 0.9136364722222222,
+          "w": 0.038888627450980394,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_dollars": {
+          "x": 0.6568624836601307,
+          "y": 0.9136364722222222,
+          "w": 0.11405254901960783,
+          "h": 0.01868696464646465
+        },
+        "bbox_amount_cents": {
+          "x": 0.7709150326797386,
+          "y": 0.9136364722222222,
+          "w": 0.04248392156862745,
+          "h": 0.01868696464646465
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_4",
+        "bbox_box_number": {
+          "x": 0.16176444444444443,
+          "y": 0.9421716186868686,
+          "w": 0.038888627450980394,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_dollars": {
+          "x": 0.21078405228758168,
+          "y": 0.9421716186868686,
+          "w": 0.11339843137254901,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_cents": {
+          "x": 0.32450954248366015,
+          "y": 0.9421716186868686,
+          "w": 0.042810196078431374,
+          "h": 0.018939512626262627
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_5",
+        "bbox_box_number": {
+          "x": 0.384640522875817,
+          "y": 0.9421716186868686,
+          "w": 0.0392156862745098,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_dollars": {
+          "x": 0.43366013071895426,
+          "y": 0.9421716186868686,
+          "w": 0.11339843137254901,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_cents": {
+          "x": 0.5473856209150327,
+          "y": 0.9421716186868686,
+          "w": 0.04248392156862745,
+          "h": 0.018939512626262627
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      },
+      {
+        "key": "other_info_6",
+        "bbox_box_number": {
+          "x": 0.6078428758169935,
+          "y": 0.9421716186868686,
+          "w": 0.038888627450980394,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_dollars": {
+          "x": 0.6568624836601307,
+          "y": 0.9421716186868686,
+          "w": 0.11372549019607843,
+          "h": 0.018939512626262627
+        },
+        "bbox_amount_cents": {
+          "x": 0.7709150326797386,
+          "y": 0.9421716186868686,
+          "w": 0.04248392156862745,
+          "h": 0.018939512626262627
+        },
+        "validators": {
+          "box_number_allowed_chars": "0123456789",
+          "amount_allowed_chars": "0123456789",
+          "amount_decimals": 2
+        }
+      }
+    ]
+  },
+  "extraction_defaults": {
+    "roi_inset_pct": 0.03,
+    "binarization": "adaptive",
+    "ocr_char_whitelist": {
+      "money": "0123456789",
+      "sin": "0123456789",
+      "year": "0123456789",
+      "text": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- \\\\/"
+    }
+  }
+}

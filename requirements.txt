@@ -14,3 +14,7 @@ lxml
 PyYAML
 uvicorn
 Fastapi
+sqlalchemy
+psycopg2-binary
+pydantic
+python-multipart

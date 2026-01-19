@@ -11,7 +11,7 @@ except ImportError:
     st = None
 
 # 2. Find the Connection String 🕵️‍♂️
-# Priority A: Check for a local .env file (good for local computers)
+# Priority A: Check for a local .env file
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -20,20 +20,28 @@ except ImportError:
     
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Priority B: Check Streamlit Secrets (The Hunter-Seeker Logic)
+# Priority B: Check Streamlit Secrets (The "Case-Insensitive" Update)
 if not DATABASE_URL and st is not None:
     try:
-        # Check 1: Is it at the very top?
+        # Check 1: Root Level (Uppercase AND Lowercase)
         if "DATABASE_URL" in st.secrets:
             DATABASE_URL = st.secrets["DATABASE_URL"]
+        elif "database_url" in st.secrets:
+            DATABASE_URL = st.secrets["database_url"]
         
-        # Check 2: Is it inside [general]?
-        elif "general" in st.secrets and "DATABASE_URL" in st.secrets["general"]:
-            DATABASE_URL = st.secrets["general"]["DATABASE_URL"]
+        # Check 2: Inside [general] section
+        elif "general" in st.secrets:
+            if "DATABASE_URL" in st.secrets["general"]:
+                DATABASE_URL = st.secrets["general"]["DATABASE_URL"]
+            elif "database_url" in st.secrets["general"]:
+                DATABASE_URL = st.secrets["general"]["database_url"]
             
-        # Check 3: Is it inside [supabase]? (This is where you put it!)
-        elif "supabase" in st.secrets and "DATABASE_URL" in st.secrets["supabase"]:
-            DATABASE_URL = st.secrets["supabase"]["DATABASE_URL"]
+        # Check 3: Inside [supabase] section
+        elif "supabase" in st.secrets:
+            if "DATABASE_URL" in st.secrets["supabase"]:
+                DATABASE_URL = st.secrets["supabase"]["DATABASE_URL"]
+            elif "database_url" in st.secrets["supabase"]:
+                DATABASE_URL = st.secrets["supabase"]["database_url"]
             
     except Exception:
         pass # Secrets not available

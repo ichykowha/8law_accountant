@@ -66,6 +66,13 @@ def scan_and_parse_pdf_local(pdf_bytes: bytes) -> dict:
     return {"scan_result": ocr_result, "parsed_data": parsed_data}
 
 
+def _fmt_money(v):
+    """
+    Format money values for Streamlit metrics.
+    """
+    return "—" if v is None else f"${float(v):,.2f}"
+
+
 def _safe_import(module_name: str):
     """
     Import a module defensively; return (ok, details).
@@ -307,7 +314,7 @@ def main():
         if st.session_state["t4_data"]:
             t4 = st.session_state["t4_data"]
             st.success(f"⚡ Data Loaded from T4: {t4.get('employer', 'Unknown Employer')}")
-            if t4.get("box_14_income"):
+            if t4.get("box_14_income") is not None:
                 try:
                     default_amount = float(t4["box_14_income"])
                 except Exception:
@@ -376,12 +383,13 @@ def main():
                         st.subheader("Extracted Data")
                         col1, col2, col3, col4 = st.columns(4)
 
-                        col1.metric("Income (Box 14)", f"${parsed.get('box_14_income')}")
-                        col2.metric("Tax Paid (Box 22)", f"${parsed.get('box_22_tax_deducted')}")
-                        col3.metric("CPP (Box 16)", f"${parsed.get('box_16_cpp')}")
-                        col4.metric("EI (Box 18)", f"${parsed.get('box_18_ei')}")
+                        col1.metric("Income (Box 14)", _fmt_money(parsed.get("box_14_income")))
+                        col2.metric("Tax Paid (Box 22)", _fmt_money(parsed.get("box_22_tax_deducted")))
+                        col3.metric("CPP (Box 16)", _fmt_money(parsed.get("box_16_cpp")))
+                        col4.metric("EI (Box 18)", _fmt_money(parsed.get("box_18_ei")))
 
-                        st.info(f"Employer Identified: {parsed.get('employer')}")
+                        employer_val = parsed.get("employer") or "—"
+                        st.info(f"Employer Identified: {employer_val}")
 
                         st.markdown("---")
                         st.warning("⚠️ Algorithm Debugging Zone")
@@ -395,3 +403,7 @@ def main():
     elif nav == "Client Management":
         st.title("Client Registry")
         st.write("Database connection can be added here (direct SQLAlchemy or Supabase client).")
+
+
+if __name__ == "__main__":
+    main()

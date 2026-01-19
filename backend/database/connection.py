@@ -20,25 +20,31 @@ except ImportError:
     
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Priority B: Check Streamlit Secrets (good for Cloud)
+# Priority B: Check Streamlit Secrets (The Hunter-Seeker Logic)
 if not DATABASE_URL and st is not None:
     try:
-        # Check if it's loose in the file
+        # Check 1: Is it at the very top?
         if "DATABASE_URL" in st.secrets:
             DATABASE_URL = st.secrets["DATABASE_URL"]
-        # Check if it's inside a [general] section
+        
+        # Check 2: Is it inside [general]?
         elif "general" in st.secrets and "DATABASE_URL" in st.secrets["general"]:
             DATABASE_URL = st.secrets["general"]["DATABASE_URL"]
+            
+        # Check 3: Is it inside [supabase]? (This is where you put it!)
+        elif "supabase" in st.secrets and "DATABASE_URL" in st.secrets["supabase"]:
+            DATABASE_URL = st.secrets["supabase"]["DATABASE_URL"]
+            
     except Exception:
         pass # Secrets not available
 
 # 3. Validate
 if not DATABASE_URL:
-    # Fallback for debugging if everything fails
-    print("❌ CRITICAL: DATABASE_URL not found in env or secrets.")
-    # We don't raise an error immediately to let the UI show a friendly message if needed,
-    # but for now, we will stop.
-    raise ValueError("DATABASE_URL is missing! Please add it to .streamlit/secrets.toml")
+    # DEBUG: Print what keys we actually found to help troubleshooting
+    if st is not None:
+        print(f"DEBUG: Available Secret Sections: {list(st.secrets.keys())}")
+    
+    raise ValueError("DATABASE_URL is missing! Please check Streamlit Secrets.")
 
 # 4. Fix Format for SQLAlchemy
 # SQLAlchemy needs 'postgresql://', but Supabase often gives 'postgres://'

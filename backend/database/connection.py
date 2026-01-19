@@ -60,7 +60,13 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # 5. Connect to the Database 🔌
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+try:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    print("DATABASE ENGINE CREATED SUCCESSFULLY")
+except Exception as e:
+    print("DATABASE ENGINE CREATION FAILED:", e)
+    raise
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

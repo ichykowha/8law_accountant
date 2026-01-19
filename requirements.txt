@@ -19,3 +19,5 @@ psycopg2-binary
 pydantic
 python-multipart
 pdfplumber
+python-dotenv
+requests

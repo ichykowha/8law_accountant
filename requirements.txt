@@ -12,3 +12,4 @@ supabase
 beautifulsoup4
 lxml
 PyYAML
+uvicorn

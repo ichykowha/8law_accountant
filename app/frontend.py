@@ -8,8 +8,7 @@ from decimal import Decimal
 import streamlit as st
 import pandas as pd
 
-# Make this module safe to import:
-# - Avoid importing backend modules at top-level (prevents circular-import / partial-init issues).
+# Ensure repo root is on sys.path so we can import backend.*
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
@@ -26,6 +25,10 @@ def _get_backend():
     from backend.logic.ocr_engine import scan_pdf
     from backend.logic.t4_parser import parse_t4_text
     return T1DecisionEngine, scan_pdf, parse_t4_text
+
+
+def _fmt_money(v):
+    return "—" if v is None else f"${float(v):,.2f}"
 
 
 def calculate_tax_local(income_type_ui: str, amount: float, province: str, tax_year: int = 2024) -> dict:
@@ -64,13 +67,6 @@ def scan_and_parse_pdf_local(pdf_bytes: bytes) -> dict:
     parsed_data = parse_t4_text(raw_text)
 
     return {"scan_result": ocr_result, "parsed_data": parsed_data}
-
-
-def _fmt_money(v):
-    """
-    Format money values for Streamlit metrics.
-    """
-    return "—" if v is None else f"${float(v):,.2f}"
 
 
 def _safe_import(module_name: str):
@@ -119,7 +115,6 @@ def _run_self_tests() -> dict:
             False,
             {"duration_ms": int((time.time() - t0) * 1000), "error": f"{type(e).__name__}: {e}"},
         )
-        # If backend can't import, downstream tests will be unreliable.
         return results
 
     # --- Test 2: T1DecisionEngine calculation ---
@@ -129,7 +124,6 @@ def _run_self_tests() -> dict:
         processed = engine.process_income_stream("T4", 50000.0)
         tax_result = engine.calculate_federal_tax(Decimal("50000.00"), return_breakdown=True)
 
-        # Extract something stable-ish for display, but remain defensive.
         sample_tax = None
         if isinstance(tax_result, dict):
             sample_tax = (
@@ -158,8 +152,6 @@ def _run_self_tests() -> dict:
     # --- Test 3: parser sanity check (no OCR) ---
     t0 = time.time()
     try:
-        # Bundled sample text approximating what OCR might produce for a T4.
-        # This is meant to validate "parse_t4_text" wiring and regex/heuristics.
         sample_t4_text = """
         T4 Statement of Remuneration Paid
         Employer: ACME INDUSTRIES LTD
@@ -175,10 +167,7 @@ def _run_self_tests() -> dict:
         record(
             "t4_parser_sanity",
             True,
-            {
-                "duration_ms": int((time.time() - t0) * 1000),
-                "parsed_preview": parsed,
-            },
+            {"duration_ms": int((time.time() - t0) * 1000), "parsed_preview": parsed},
         )
     except Exception as e:
         record(
@@ -188,14 +177,10 @@ def _run_self_tests() -> dict:
         )
 
     # --- Test 4: OCR dependencies validation ---
-    # This does NOT run OCR on a PDF (needs a sample PDF + renderer). Instead it validates:
-    # - python libs importable
-    # - tesseract binary exists and returns a version
     t0 = time.time()
     try:
         dep_checks = {}
 
-        # Python modules commonly needed for OCR/PDF extraction flows
         for mod in ["PIL", "pytesseract", "pdfplumber", "pypdf", "pypdfium2"]:
             ok, msg = _safe_import(mod)
             dep_checks[mod] = {"ok": ok, "details": msg}
@@ -206,7 +191,6 @@ def _run_self_tests() -> dict:
             tesseract_version = None
         else:
             try:
-                # Keep it short; streamlit logs remain readable.
                 proc = subprocess.run(
                     ["tesseract", "--version"],
                     capture_output=True,
@@ -246,12 +230,10 @@ def _run_self_tests() -> dict:
 
 
 def _render_self_test_panel():
-    """
-    Renders a diagnostics expander that the user can run on-demand.
-    """
     with st.expander("Self-test / Diagnostics", expanded=False):
         st.caption(
-            "Runs quick health checks: backend imports, T1 engine trivial calculation, T4 parser sanity check, and OCR dependency validation."
+            "Runs quick health checks: backend imports, T1 engine trivial calculation, "
+            "T4 parser sanity check, and OCR dependency validation."
         )
 
         if st.button("Run self-tests", type="primary"):
@@ -268,7 +250,6 @@ def _render_self_test_panel():
 
             st.json(results)
 
-            # Optional: show a human-readable rollup
             st.markdown("---")
             st.subheader("Rollup")
             for name, info in results["tests"].items():
@@ -349,7 +330,7 @@ def main():
 
                     federal_tax = data["tax_estimate"].get("federal_tax_before_credits")
                     if federal_tax is not None:
-                        st.metric("Federal Tax Owing", f"${federal_tax}")
+                        st.metric("Federal Tax Owing", _fmt_money(federal_tax))
                     else:
                         st.write("Tax estimate:")
                         st.json(data["tax_estimate"])

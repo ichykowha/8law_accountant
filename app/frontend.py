@@ -8,7 +8,8 @@ from decimal import Decimal
 import streamlit as st
 import pandas as pd
 
-# Ensure repo root is on sys.path so we can import backend.*
+# Make this module safe to import:
+# - Avoid importing backend modules at top-level (prevents circular-import / partial-init issues).
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
@@ -180,7 +181,6 @@ def _run_self_tests() -> dict:
     t0 = time.time()
     try:
         dep_checks = {}
-
         for mod in ["PIL", "pytesseract", "pdfplumber", "pypdf", "pypdfium2"]:
             ok, msg = _safe_import(mod)
             dep_checks[mod] = {"ok": ok, "details": msg}
@@ -209,15 +209,10 @@ def _run_self_tests() -> dict:
                 tesseract_version = None
 
         overall_ok = all(v["ok"] for v in dep_checks.values())
-
         record(
             "ocr_dependency_validation",
             overall_ok,
-            {
-                "duration_ms": int((time.time() - t0) * 1000),
-                "checks": dep_checks,
-                "tesseract_version": tesseract_version,
-            },
+            {"duration_ms": int((time.time() - t0) * 1000), "checks": dep_checks, "tesseract_version": tesseract_version},
         )
     except Exception as e:
         record(
@@ -232,8 +227,7 @@ def _run_self_tests() -> dict:
 def _render_self_test_panel():
     with st.expander("Self-test / Diagnostics", expanded=False):
         st.caption(
-            "Runs quick health checks: backend imports, T1 engine trivial calculation, "
-            "T4 parser sanity check, and OCR dependency validation."
+            "Runs quick health checks: backend imports, T1 engine trivial calculation, T4 parser sanity check, and OCR dependency validation."
         )
 
         if st.button("Run self-tests", type="primary"):
@@ -262,14 +256,11 @@ def _render_self_test_panel():
 def main():
     st.set_page_config(page_title="8law Professional", page_icon="⚖️", layout="wide")
 
-    # --- Session State ---
     if "t4_data" not in st.session_state:
         st.session_state["t4_data"] = None
-
     if "authentication_status" not in st.session_state:
         st.session_state["authentication_status"] = True
 
-    # --- Sidebar ---
     with st.sidebar:
         st.title("8law Accountant")
         st.markdown("---")
@@ -279,7 +270,6 @@ def main():
         st.markdown("---")
         _render_self_test_panel()
 
-    # --- Dashboard Page ---
     if nav == "Dashboard":
         st.title("Firm Overview")
         st.info("System initialized successfully.")
@@ -287,7 +277,6 @@ def main():
         st.subheader("Operational Checks")
         st.write("Run diagnostics from the sidebar to validate engine wiring and OCR dependencies.")
 
-    # --- Tax Calculator ---
     elif nav == "Tax Calculator":
         st.title("T1 Decision Engine")
 
@@ -295,7 +284,7 @@ def main():
         if st.session_state["t4_data"]:
             t4 = st.session_state["t4_data"]
             st.success(f"⚡ Data Loaded from T4: {t4.get('employer', 'Unknown Employer')}")
-            if t4.get("box_14_income") is not None:
+            if t4.get("box_14_income"):
                 try:
                     default_amount = float(t4["box_14_income"])
                 except Exception:
@@ -306,17 +295,13 @@ def main():
             with col1:
                 income_type_ui = st.selectbox("Income Type", ["EMPLOYMENT", "SELF_EMPLOYED"])
             with col2:
-                amount = st.number_input("Amount ($)", min_value=0.0, value=float(default_amount), step=100.0)
+                # CHANGE #1: key added (browser-like persistence across reruns)
+                amount = st.number_input("Amount ($)", value=float(default_amount), step=100.0, key="tax_amount")
             submitted = st.form_submit_button("Calculate Tax")
 
         if submitted:
             try:
-                data = calculate_tax_local(
-                    income_type_ui=income_type_ui,
-                    amount=amount,
-                    province="ON",
-                    tax_year=2024,
-                )
+                data = calculate_tax_local(income_type_ui=income_type_ui, amount=amount, province="ON", tax_year=2024)
 
                 st.success("Calculation Complete")
 
@@ -327,10 +312,9 @@ def main():
 
                 with res_col2:
                     st.subheader("Federal Tax Estimate")
-
                     federal_tax = data["tax_estimate"].get("federal_tax_before_credits")
                     if federal_tax is not None:
-                        st.metric("Federal Tax Owing", _fmt_money(federal_tax))
+                        st.metric("Federal Tax Owing", f"${federal_tax}")
                     else:
                         st.write("Tax estimate:")
                         st.json(data["tax_estimate"])
@@ -343,7 +327,6 @@ def main():
             except Exception as e:
                 st.error(f"Calculation failed: {type(e).__name__}: {e}")
 
-    # --- Document Upload (With Smart Parser) ---
     elif nav == "Document Upload":
         st.title("Secure Vault Upload")
         uploaded_file = st.file_uploader("Upload Client Statements (PDF)", type=["pdf"])
@@ -380,7 +363,6 @@ def main():
                     except Exception as e:
                         st.error(f"Scan failed: {type(e).__name__}: {e}")
 
-    # --- Client Management ---
     elif nav == "Client Management":
         st.title("Client Registry")
         st.write("Database connection can be added here (direct SQLAlchemy or Supabase client).")

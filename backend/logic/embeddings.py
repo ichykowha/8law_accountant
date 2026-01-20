@@ -2,37 +2,55 @@ import os
 import time
 from typing import List, Optional
 
-from openai import OpenAI
+try:
+    # OpenAI Python SDK v1.x
+    from openai import OpenAI
+except Exception as e:  # pragma: no cover
+    OpenAI = None  # type: ignore
+    _OPENAI_IMPORT_ERROR = e
+else:
+    _OPENAI_IMPORT_ERROR = None
 
 
-def _require_value(name: str, value: Optional[str]) -> str:
-    if not value:
-        raise RuntimeError(f"Missing required configuration value: {name}")
-    return value
-
-
-def _get_api_key() -> str:
+def _get_secret(name: str) -> Optional[str]:
     """
-    Prefer environment variable; optionally support Streamlit Secrets without importing streamlit at module import time.
+    Read from env first; then Streamlit secrets if available.
+    Safe to import even when Streamlit isn't installed.
     """
-    api_key = os.getenv("OPENAI_API_KEY")
-    if api_key:
-        return api_key
+    v = os.getenv(name)
+    if v:
+        return v
 
-    # Optional: if running in Streamlit, allow st.secrets["OPENAI_API_KEY"]
     try:
-        import streamlit as st  # lazy import
-        api_key = st.secrets.get("OPENAI_API_KEY")  # type: ignore[attr-defined]
-        if api_key:
-            return api_key
+        import streamlit as st  # local import to avoid hard dependency
+        if hasattr(st, "secrets") and name in st.secrets:
+            return str(st.secrets[name])
     except Exception:
         pass
 
-    return _require_value("OPENAI_API_KEY", None)
+    return None
 
 
-def _get_client() -> OpenAI:
-    return OpenAI(api_key=_get_api_key())
+def _require_secret(name: str) -> str:
+    v = _get_secret(name)
+    if not v:
+        raise RuntimeError(
+            f"Missing required secret '{name}'. "
+            f"Set it in Streamlit Secrets or as an environment variable."
+        )
+    return v
+
+
+def _get_client() -> "OpenAI":
+    if OpenAI is None:
+        raise RuntimeError(
+            "Python package 'openai' is not installed (or failed to import). "
+            "Add `openai>=1.40.0,<2` to requirements.txt and redeploy. "
+            f"Import error: {type(_OPENAI_IMPORT_ERROR).__name__}: {_OPENAI_IMPORT_ERROR}"
+        )
+
+    api_key = _require_secret("OPENAI_API_KEY")
+    return OpenAI(api_key=api_key)
 
 
 def embed_texts(
@@ -44,52 +62,35 @@ def embed_texts(
     """
     Generate embeddings for a list of strings using OpenAI embeddings.
 
-    - Returns embeddings in the same order as input texts.
-    - Uses conservative batching to reduce request-size / token-limit risk.
+    - Preserves input order.
+    - Avoids empty strings (OpenAI rejects them).
+    - Retries transient failures with exponential backoff.
     """
     if not texts:
         return []
 
-    if batch_size <= 0:
-        raise ValueError("batch_size must be > 0")
+    emb_model = model or _get_secret("OPENAI_EMBED_MODEL") or "text-embedding-3-small"
 
-    if max_retries <= 0:
-        raise ValueError("max_retries must be > 0")
-
-    # Default model is 3-small; allow override via env or function param.
-    emb_model = model or os.getenv("OPENAI_EMBED_MODEL") or "text-embedding-3-small"
-
-    # Embedding inputs should not be empty strings.
     cleaned: List[str] = []
     for t in texts:
         t2 = (t or "").strip()
-        cleaned.append(t2 if t2 else " ")  # single space avoids empty-string rejection
+        cleaned.append(t2 if t2 else " ")
 
     client = _get_client()
     all_vectors: List[List[float]] = []
 
     def call_batch(batch: List[str]) -> List[List[float]]:
         backoff = 1.0
-        last_err: Optional[Exception] = None
+        last_err: Exception | None = None
 
         for _ in range(max_retries):
             try:
-                resp = client.embeddings.create(
-                    model=emb_model,
-                    input=batch,
-                )
-
-                # Defensive ordering: if indices exist, sort by them.
-                data = list(resp.data)
-                if data and hasattr(data[0], "index"):
-                    data.sort(key=lambda x: x.index)
-
-                return [item.embedding for item in data]
-
+                resp = client.embeddings.create(model=emb_model, input=batch)
+                return [item.embedding for item in resp.data]
             except Exception as e:
                 last_err = e
                 time.sleep(backoff)
-                backoff = min(backoff * 2, 16.0)
+                backoff *= 2
 
         raise RuntimeError(
             f"OpenAI embeddings failed after retries: {type(last_err).__name__}: {last_err}"
@@ -98,10 +99,12 @@ def embed_texts(
     for i in range(0, len(cleaned), batch_size):
         batch = cleaned[i : i + batch_size]
         vecs = call_batch(batch)
+
         if len(vecs) != len(batch):
             raise RuntimeError(
                 f"Embedding response size mismatch: got {len(vecs)} vectors for {len(batch)} inputs"
             )
+
         all_vectors.extend(vecs)
 
     return all_vectors

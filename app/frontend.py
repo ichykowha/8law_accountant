@@ -25,6 +25,7 @@ def _get_backend():
     from backend.logic.t1_engine import T1DecisionEngine
     from backend.logic.ocr_engine import scan_pdf
     from backend.logic.t4_parser import parse_t4_text
+
     return T1DecisionEngine, scan_pdf, parse_t4_text
 
 
@@ -59,17 +60,17 @@ def calculate_tax_local(income_type_ui: str, amount: float, province: str, tax_y
 
 def _embed_texts(texts: list[str]) -> list[list[float]]:
     """
-    TODO: wire to your embedding provider.
+    OpenAI embedding provider (8law default):
+      - text-embedding-3-small (fallback: text-embedding-ada-002)
 
-    Options:
-    - Pinecone Inference embeddings (if enabled on your account)
-    - Google embeddings via google-genai
-    - Local embeddings (heavier)
-
-    For now, raise so it’s explicit and doesn’t silently ingest junk.
+    Requires:
+      - OPENAI_API_KEY in environment
+    Optional:
+      - OPENAI_EMBED_MODEL in environment
     """
-    raise NotImplementedError("Embedding provider not configured yet.")
+    from backend.logic.embeddings import embed_texts
 
+    return embed_texts(texts)
 
 
 def scan_and_parse_pdf_local(pdf_bytes: bytes) -> dict:
@@ -99,6 +100,7 @@ def _safe_import(module_name: str):
 def _run_self_tests() -> dict:
     """
     Runs lightweight diagnostics that should work in Streamlit Cloud:
+    - backend imports
     - T1DecisionEngine calculation sanity check
     - parse_t4_text sanity check with bundled sample text (no OCR)
     - OCR dependency validation (python imports + tesseract binary presence/version)
@@ -119,7 +121,7 @@ def _run_self_tests() -> dict:
     # --- Test 1: backend import ---
     t0 = time.time()
     try:
-        T1DecisionEngine, scan_pdf, parse_t4_text = _get_backend()
+        T1DecisionEngine, _, parse_t4_text = _get_backend()
         record(
             "backend_imports",
             True,
@@ -131,6 +133,7 @@ def _run_self_tests() -> dict:
             False,
             {"duration_ms": int((time.time() - t0) * 1000), "error": f"{type(e).__name__}: {e}"},
         )
+        # If backend can't import, downstream tests will be unreliable.
         return results
 
     # --- Test 2: T1DecisionEngine calculation ---
@@ -240,6 +243,9 @@ def _run_self_tests() -> dict:
 
 
 def _render_self_test_panel():
+    """
+    Renders a diagnostics expander that the user can run on-demand.
+    """
     with st.expander("Self-test / Diagnostics", expanded=False):
         st.caption(
             "Runs quick health checks: backend imports, T1 engine trivial calculation, T4 parser sanity check, and OCR dependency validation."
@@ -271,20 +277,27 @@ def _render_self_test_panel():
 def main():
     st.set_page_config(page_title="8law Professional", page_icon="⚖️", layout="wide")
 
+    # --- Session State ---
     if "t4_data" not in st.session_state:
         st.session_state["t4_data"] = None
+
     if "authentication_status" not in st.session_state:
         st.session_state["authentication_status"] = True
 
+    # --- Sidebar ---
     with st.sidebar:
         st.title("8law Accountant")
         st.markdown("---")
-        nav = st.radio("Navigation", ["Dashboard", "Tax Calculator", "Document Upload", "Client Management"])
+        nav = st.radio(
+            "Navigation",
+            ["Dashboard", "Tax Calculator", "Document Upload", "Knowledge Base", "Client Management"],
+        )
         st.markdown("---")
         st.write("**Status:** 🟢 System Online")
         st.markdown("---")
         _render_self_test_panel()
 
+    # --- Dashboard Page ---
     if nav == "Dashboard":
         st.title("Firm Overview")
         st.info("System initialized successfully.")
@@ -292,6 +305,7 @@ def main():
         st.subheader("Operational Checks")
         st.write("Run diagnostics from the sidebar to validate engine wiring and OCR dependencies.")
 
+    # --- Tax Calculator ---
     elif nav == "Tax Calculator":
         st.title("T1 Decision Engine")
 
@@ -310,13 +324,18 @@ def main():
             with col1:
                 income_type_ui = st.selectbox("Income Type", ["EMPLOYMENT", "SELF_EMPLOYED"])
             with col2:
-                # CHANGE #1: key added (browser-like persistence across reruns)
+                # Persist between reruns (Streamlit-style "autofill")
                 amount = st.number_input("Amount ($)", value=float(default_amount), step=100.0, key="tax_amount")
             submitted = st.form_submit_button("Calculate Tax")
 
         if submitted:
             try:
-                data = calculate_tax_local(income_type_ui=income_type_ui, amount=amount, province="ON", tax_year=2024)
+                data = calculate_tax_local(
+                    income_type_ui=income_type_ui,
+                    amount=amount,
+                    province="ON",
+                    tax_year=2024,
+                )
 
                 st.success("Calculation Complete")
 
@@ -327,6 +346,7 @@ def main():
 
                 with res_col2:
                     st.subheader("Federal Tax Estimate")
+
                     federal_tax = data["tax_estimate"].get("federal_tax_before_credits")
                     if federal_tax is not None:
                         st.metric("Federal Tax Owing", f"${federal_tax}")
@@ -342,6 +362,7 @@ def main():
             except Exception as e:
                 st.error(f"Calculation failed: {type(e).__name__}: {e}")
 
+    # --- Document Upload ---
     elif nav == "Document Upload":
         st.title("Secure Vault Upload")
         uploaded_file = st.file_uploader("Upload Client Statements (PDF)", type=["pdf"])
@@ -378,6 +399,43 @@ def main():
                     except Exception as e:
                         st.error(f"Scan failed: {type(e).__name__}: {e}")
 
+    # --- Knowledge Base (Textbook ingestion) ---
+    elif nav == "Knowledge Base":
+        st.title("Knowledge Base Ingestion (Textbook)")
+
+        book_default = os.getenv("BOOK_NAME") or "Accounting Textbook"
+        book = st.text_input("Book name", value=book_default)
+        chapter = st.text_input("Chapter label", value="Chapter 11")
+
+        pdf = st.file_uploader("Upload Chapter PDF", type=["pdf"])
+
+        if pdf and st.button("Ingest Chapter", type="primary"):
+            with st.spinner("Extracting and chunking..."):
+                from backend.logic.kb_ingest import extract_text_by_page, chunk_text
+                from backend.logic.kb_store import upsert_chunks
+
+                pdf_bytes = pdf.getvalue()
+                pages = extract_text_by_page(pdf_bytes)
+                chunks = chunk_text(pages, book=book, chapter=chapter)
+
+                st.write(f"Extracted {len(pages)} pages, created {len(chunks)} chunks.")
+
+            with st.spinner("Embedding and upserting to Pinecone..."):
+                texts = [c.text for c in chunks]
+                vectors = _embed_texts(texts)
+
+                upsert_payload = []
+                for c, v in zip(chunks, vectors):
+                    md = dict(c.metadata)
+                    md["text"] = c.text  # store snippet for retrieval display
+                    upsert_payload.append((c.id, v, md))
+
+                resp = upsert_chunks(upsert_payload)
+
+            st.success("Ingestion complete.")
+            st.json(resp)
+
+    # --- Client Management ---
     elif nav == "Client Management":
         st.title("Client Registry")
         st.write("Database connection can be added here (direct SQLAlchemy or Supabase client).")

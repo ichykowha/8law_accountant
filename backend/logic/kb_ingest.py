@@ -1,10 +1,11 @@
 import hashlib
-import os
+import io
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import pdfplumber
+
 
 # If you want OCR fallback later, you can wire in your existing ocr_engine.scan_pdf
 
@@ -17,13 +18,19 @@ class KBChunk:
 
 
 def _normalize_ws(s: str) -> str:
-    s = s.replace("\u00a0", " ").replace("\u2009", " ").replace("\u202f", " ")
+    """
+    Normalize whitespace for chunk stability and better embedding quality.
+    """
+    s = (s or "").replace("\u00a0", " ").replace("\u2009", " ").replace("\u202f", " ")
     s = re.sub(r"[ \t]+", " ", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
 
 
 def _sha1_id(*parts: str) -> str:
+    """
+    Deterministic chunk ID so re-ingesting the same content yields the same IDs.
+    """
     h = hashlib.sha1()
     for p in parts:
         h.update((p or "").encode("utf-8"))
@@ -37,7 +44,7 @@ def extract_text_by_page(pdf_bytes: bytes) -> List[Tuple[int, str]]:
     Uses pdfplumber text extraction (fast if PDF has embedded text).
     """
     out: List[Tuple[int, str]] = []
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:  # type: ignore
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for i, page in enumerate(pdf.pages, start=1):
             text = page.extract_text() or ""
             text = _normalize_ws(text)
@@ -54,14 +61,22 @@ def chunk_text(
 ) -> List[KBChunk]:
     """
     Simple character-based chunking that preserves page citations.
-    Each chunk is associated with a page range (usually 1 page unless spillover).
+    Each chunk is associated with a page range (often 1 page unless spillover).
     """
+    if max_chars <= 0:
+        raise ValueError("max_chars must be > 0")
+    if overlap_chars < 0:
+        raise ValueError("overlap_chars must be >= 0")
+    if overlap_chars >= max_chars:
+        raise ValueError("overlap_chars must be < max_chars")
+
     chunks: List[KBChunk] = []
     buffer = ""
     buffer_pages: List[int] = []
 
     def flush():
         nonlocal buffer, buffer_pages
+
         txt = _normalize_ws(buffer)
         if not txt:
             buffer = ""
@@ -89,9 +104,10 @@ def chunk_text(
             )
         )
 
-        # overlap
+        # Overlap: keep last overlap_chars chars to improve continuity between chunks
         if overlap_chars > 0 and len(txt) > overlap_chars:
             buffer = txt[-overlap_chars:]
+            # Keep a small tail of page provenance (best-effort)
             buffer_pages = buffer_pages[-2:] if len(buffer_pages) > 2 else buffer_pages
         else:
             buffer = ""
@@ -101,17 +117,16 @@ def chunk_text(
         if not page_text:
             continue
 
-        # Start new buffer if empty
+        # Start tracking pages if buffer is empty
         if not buffer:
             buffer_pages = [page_num]
 
         # If adding this page would exceed max, flush first
         if len(buffer) + len(page_text) + 2 > max_chars:
             flush()
-            if buffer:
-                # if overlap retained, keep tracking this page too
-                if page_num not in buffer_pages:
-                    buffer_pages.append(page_num)
+            # If overlap retained, ensure current page is attributed
+            if buffer and page_num not in buffer_pages:
+                buffer_pages.append(page_num)
 
         # Append page text
         if buffer:
@@ -126,4 +141,3 @@ def chunk_text(
 
     flush()
     return chunks
-

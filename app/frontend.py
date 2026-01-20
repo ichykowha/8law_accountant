@@ -57,6 +57,21 @@ def calculate_tax_local(income_type_ui: str, amount: float, province: str, tax_y
     return {"analysis": processed, "tax_estimate": tax_result}
 
 
+def _embed_texts(texts: list[str]) -> list[list[float]]:
+    """
+    TODO: wire to your embedding provider.
+
+    Options:
+    - Pinecone Inference embeddings (if enabled on your account)
+    - Google embeddings via google-genai
+    - Local embeddings (heavier)
+
+    For now, raise so it’s explicit and doesn’t silently ingest junk.
+    """
+    raise NotImplementedError("Embedding provider not configured yet.")
+
+
+
 def scan_and_parse_pdf_local(pdf_bytes: bytes) -> dict:
     """
     Local replacement for POST /document/scan

@@ -3,29 +3,19 @@ from typing import Any, Dict, Optional, List, Tuple
 
 __all__ = ["parse_t4_text"]
 
-# Common T4 box numbers that appear in OCR output.
-# Used to prevent mis-reading box numbers as cents.
 T4_BOX_NUMBERS = {
-    10, 12, 14, 16, 16, 16, 16, 16,
-    16, 16, 16, 16, 16, 16, 16, 16,
-    16, 16, 16, 16,
-    16, 16, 16, 16,  # harmless repetition, kept simple
-    16, 17, 18, 20, 22, 24, 26, 28, 29,
+    10, 12, 14, 16, 17, 18, 20, 22, 24, 26, 28, 29,
     44, 45, 46, 50, 52, 54, 55, 56,
     57, 58, 59, 60,
     66, 67, 69, 71, 74, 75, 77, 78, 79, 80, 81, 82, 83, 85, 86, 87, 88
 }
 
+COVID_PERIOD_BOXES = {57, 58, 59, 60}
+
 
 def _clean_text(raw: str) -> str:
-    """
-    Normalize OCR text WITHOUT globally converting "space decimals".
-    That conversion is now done safely during token parsing to avoid
-    mistakes like "692308 58" (where 58 is a box number, not cents).
-    """
     if not raw:
         return ""
-
     txt = raw
     txt = re.sub(r"\(cid:\d+\)", " ", txt)
     txt = txt.replace("\u00a0", " ").replace("\u2009", " ").replace("\u202f", " ")
@@ -35,12 +25,8 @@ def _clean_text(raw: str) -> str:
 
 
 def _find_data_region(txt: str) -> str:
-    """
-    Cut off before CRA instruction blocks (keeps the data area).
-    """
     if not txt:
         return ""
-
     markers = [
         "Report these amounts",
         "Veuillez déclarer ces montants",
@@ -48,13 +34,11 @@ def _find_data_region(txt: str) -> str:
         "À l'usage de l'Agence du revenu du Canada seulement",
         "REV OSP",
     ]
-
     cut = len(txt)
     for m in markers:
         idx = txt.find(m)
         if idx != -1:
             cut = min(cut, idx)
-
     return txt[:cut]
 
 
@@ -67,13 +51,8 @@ def _extract_year(region: str) -> Optional[int]:
 
 
 def _extract_employer(region: str) -> Optional[str]:
-    """
-    Heuristic employer extraction: pick the first non-empty line
-    that looks like a company name and is not a header phrase.
-    """
     if not region:
         return None
-
     lines = [ln.strip() for ln in region.splitlines() if ln.strip()]
     if not lines:
         return None
@@ -85,119 +64,146 @@ def _extract_employer(region: str) -> Optional[str]:
         "Année", "État", "rémunération", "payée",
         "Box", "Case", "Amount", "Montant",
     ]
-
-    for ln in lines[:25]:
+    for ln in lines[:30]:
         low = ln.lower()
         if any(b.lower() in low for b in bad):
             continue
-        # must contain letters and not be mostly numeric
         if not re.search(r"[A-Za-z]", ln):
             continue
         if re.fullmatch(r"[0-9 .,\-]+", ln):
             continue
         return ln
-
     return None
 
 
 def _tokenize_numbers(region: str) -> List[str]:
-    """
-    Extract numeric tokens from region:
-    - integers (e.g., 692308)
-    - decimals (e.g., 49155.13)
-    We intentionally ignore commas here; OCR rarely includes them.
-    """
     if not region:
         return []
     return re.findall(r"\d+\.\d{2}|\d+", region)
 
 
-def _as_int(token: str) -> Optional[int]:
+def _as_int(tok: str) -> Optional[int]:
     try:
-        return int(token)
+        return int(tok)
     except Exception:
         return None
 
 
-def _as_float(token: str) -> Optional[float]:
+def _as_float(tok: str) -> Optional[float]:
     try:
-        return float(token)
+        return float(tok)
     except Exception:
         return None
 
 
-def _reconstruct_amounts(tokens: List[str]) -> List[float]:
-    """
-    Convert tokens into monetary amounts.
+def _join_int_and_cents(dollars_int: int, cents_token: str) -> Optional[float]:
+    if dollars_int is None or cents_token is None:
+        return None
+    if not (len(cents_token) == 2 and cents_token.isdigit()):
+        return None
+    return _as_float(f"{dollars_int}.{cents_token}")
 
-    Rules:
-    - If token is already X.YY -> amount
-    - If token is large integer and next token is 2 digits:
-        - If next token is a known T4 box number -> do NOT treat as cents.
-          Instead, if the integer has >=5 digits, split last 2 digits as cents.
-          Example: 692308 + next box 58 => 6923.08
-        - Otherwise treat as cents: 49155 13 => 49155.13
-    - Otherwise ignore token (to avoid turning every box number into money).
+
+def _split_squeezed_int(n: int) -> Optional[float]:
+    s = str(n)
+    if len(s) < 5:
+        return None
+    return _as_float(f"{s[:-2]}.{s[-2:]}")
+
+
+def _scan_box_amounts(tokens: List[str]) -> Tuple[Dict[int, float], List[float]]:
     """
-    out: List[float] = []
+    Produces:
+      - box_map: explicit mapping when box numbers are present
+      - all_amounts: reconstructed amounts found in order
+    """
+    box_map: Dict[int, float] = {}
+    all_amounts: List[float] = []
+
     i = 0
     while i < len(tokens):
         t = tokens[i]
+        ti = _as_int(t)
 
-        # Already a decimal amount
+        # ---- Box-directed parse ----
+        if ti is not None and ti in T4_BOX_NUMBERS:
+            box = ti
+
+            if i + 1 < len(tokens):
+                nxt = tokens[i + 1]
+
+                # Decimal already
+                if re.fullmatch(r"\d+\.\d{2}", nxt):
+                    v = _as_float(nxt)
+                    if v is not None:
+                        box_map[box] = v
+                        all_amounts.append(v)
+                        i += 2
+                        continue
+
+                # dollars + cents (only when dollars >= 100)
+                n2 = _as_int(nxt)
+                if n2 is not None and i + 2 < len(tokens):
+                    nxt2 = tokens[i + 2]
+                    if n2 >= 100 and len(nxt2) == 2 and nxt2.isdigit():
+                        v = _join_int_and_cents(n2, nxt2)
+                        if v is not None:
+                            box_map[box] = v
+                            all_amounts.append(v)
+                            i += 3
+                            continue
+
+                # squeezed int >= 5 digits
+                if n2 is not None:
+                    v = _split_squeezed_int(n2)
+                    if v is not None:
+                        box_map[box] = v
+                        all_amounts.append(v)
+                        i += 2
+                        continue
+
+            i += 1
+            continue
+
+        # ---- Free-stream parse (no explicit box number) ----
         if re.fullmatch(r"\d+\.\d{2}", t):
             v = _as_float(t)
             if v is not None:
-                out.append(v)
+                all_amounts.append(v)
             i += 1
             continue
 
-        # Integer token
-        n = _as_int(t)
-        if n is None:
-            i += 1
-            continue
-
-        # Consider "split decimals": N + (two-digit token)
-        if i + 1 < len(tokens):
+        n = ti
+        if n is not None and i + 1 < len(tokens):
             nxt = tokens[i + 1]
             nxt_int = _as_int(nxt)
 
-            # nxt must be 2 digits to be "cents candidate"
-            if nxt_int is not None and 0 <= nxt_int <= 99 and len(nxt) == 2:
-                # If nxt is actually a box number, do NOT treat as cents.
-                if nxt_int in T4_BOX_NUMBERS:
-                    # Try salvage: split last 2 digits of current integer as cents
-                    # Only if it looks like it was squeezed (>= 5 digits).
-                    s = str(n)
-                    if len(s) >= 5:
-                        dollars = s[:-2]
-                        cents = s[-2:]
-                        v = _as_float(f"{dollars}.{cents}")
-                        if v is not None:
-                            out.append(v)
+            # Join cents if dollars >= 100
+            if n >= 100 and nxt_int is not None and len(nxt) == 2 and nxt.isdigit():
+                # Block only the specific "squeezed + next box" bug (>=5 digits + box number)
+                if len(str(n)) >= 5 and nxt_int in T4_BOX_NUMBERS:
+                    v = _split_squeezed_int(n)
+                    if v is not None:
+                        all_amounts.append(v)
                     i += 1
                     continue
 
-                # Normal case: treat nxt as cents
-                v = _as_float(f"{n}.{nxt}")
+                # Allow EI like 776 75
+                v = _join_int_and_cents(n, nxt)
                 if v is not None:
-                    out.append(v)
-                i += 2
-                continue
+                    all_amounts.append(v)
+                    i += 2
+                    continue
 
-        # If no usable pairing, try salvage squeezed integer like 692308 (-> 6923.08)
-        s = str(n)
-        if len(s) >= 5:
-            dollars = s[:-2]
-            cents = s[-2:]
-            v = _as_float(f"{dollars}.{cents}")
+        # Salvage squeezed ints in free stream
+        if n is not None:
+            v = _split_squeezed_int(n)
             if v is not None:
-                out.append(v)
+                all_amounts.append(v)
 
         i += 1
 
-    return out
+    return box_map, all_amounts
 
 
 def parse_t4_text(raw_text: str) -> Dict[str, Any]:
@@ -207,37 +213,52 @@ def parse_t4_text(raw_text: str) -> Dict[str, Any]:
     year = _extract_year(region)
     employer = _extract_employer(region)
 
-    # Reconstruct monetary values safely
     tokens = _tokenize_numbers(region)
-    amounts = _reconstruct_amounts(tokens)
+    box_map, amounts = _scan_box_amounts(tokens)
 
-    # If your OCR includes 57–60 blocks, exclude those from being treated as box14 candidates.
-    # This prevents the "COVID-period boxes" from being mistaken as total employment income.
-    # Practical heuristic: throw away amounts that appear immediately after tokens 57/58/59/60.
-    # (We keep it simple by excluding any "very large" amount that looks like a box join artifact.)
-    safe_amounts = [a for a in amounts if a < 300000.00]  # keeps typical T4 ranges sane
-    if not safe_amounts:
-        safe_amounts = amounts
+    # Explicit values if present
+    box14 = box_map.get(14)
+    box22 = box_map.get(22)
+    box16 = box_map.get(16)  # CPP
+    box18 = box_map.get(18)  # EI
 
-    # Core fields heuristic:
-    # - box14 (income): largest "safe" amount
-    # - box22: next largest below income
-    # - box18 (EI): smallest positive <= 2000
-    # - box16 (CPP): largest positive below box22 (and above box18 if present)
-    box14 = max(safe_amounts) if safe_amounts else None
+    # Exclude COVID period amounts from any inference pool
+    covid_vals = {box_map[b] for b in COVID_PERIOD_BOXES if b in box_map}
+    pool = [a for a in amounts if a not in covid_vals and a is not None]
 
-    below_income = [a for a in safe_amounts if box14 is not None and a < box14 - 0.009]
-    box22 = max(below_income) if below_income else None
+    # Infer income/tax/cpp/ei only if missing
+    if box14 is None and pool:
+        box14 = max(pool)
 
-    small = [a for a in safe_amounts if 0 < a <= 2000.00]
-    box18 = min(small) if small else None
+    if box22 is None and box14 is not None:
+        below_income = [a for a in pool if a < box14 - 0.009]
+        box22 = max(below_income) if below_income else None
 
-    candidates = [a for a in safe_amounts if a > 0]
-    if box22 is not None:
-        candidates = [a for a in candidates if a < box22 - 0.009]
-    if box18 is not None:
-        candidates = [a for a in candidates if a > box18 + 0.009]
-    box16 = max(candidates) if candidates else None
+    if box18 is None:
+        # EI: typically <= 2000; prefer smallest positive
+        small = [a for a in pool if 0 < a <= 2000.00]
+        box18 = min(small) if small else None
+
+    if box16 is None:
+        # CPP: often a few thousand; keep it under ~10k to avoid box22,
+        # and above EI if EI found
+        cpp_candidates = [a for a in pool if 500.00 <= a <= 10000.00]
+        if box18 is not None:
+            cpp_candidates = [a for a in cpp_candidates if a > box18 + 0.009]
+        if box22 is not None:
+            cpp_candidates = [a for a in cpp_candidates if a < box22 - 0.009]
+
+        # Prefer the largest remaining candidate
+        if cpp_candidates:
+            box16 = max(cpp_candidates)
+        else:
+            # fallback: original heuristic
+            candidates = [a for a in pool if a > 0]
+            if box22 is not None:
+                candidates = [a for a in candidates if a < box22 - 0.009]
+            if box18 is not None:
+                candidates = [a for a in candidates if a > box18 + 0.009]
+            box16 = max(candidates) if candidates else None
 
     return {
         "doc_type": "T4 Statement of Remuneration",

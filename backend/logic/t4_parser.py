@@ -1,62 +1,37 @@
 import re
 from typing import Any, Dict, Optional, List, Tuple
 
+__all__ = ["parse_t4_text"]
 
-# -----------------------------
-# Helpers
-# -----------------------------
 
 def _clean_text(raw: str) -> str:
-    """
-    Normalize OCR text to make extraction reliable.
-    - Removes common OCR artifacts like (cid:123)
-    - Normalizes whitespace
-    - Converts '43266 67' (even across newlines/tabs) -> '43266.67' for amounts
-      (only when left side has >=3 digits to avoid converting box numbers like "20 46")
-    """
     if not raw:
         return ""
 
     txt = raw
 
-    # Remove common PDF/OCR artifacts like (cid:379)
     txt = re.sub(r"\(cid:\d+\)", " ", txt)
-
-    # Normalize weird whitespace characters
     txt = txt.replace("\u00a0", " ").replace("\u2009", " ").replace("\u202f", " ")
-
-    # Normalize line endings
     txt = txt.replace("\r\n", "\n").replace("\r", "\n")
-
-    # Collapse runs of spaces/tabs (keep newlines)
     txt = re.sub(r"[ \t]+", " ", txt)
 
-    # Convert OCR "space-decimals" to decimals across ANY whitespace (space/tab/newline)
-    # Examples: 43266 67 -> 43266.67, 705\n26 -> 705.26
+    # Convert OCR "space-decimals" even across newlines: 705\n26 -> 705.26
     txt = re.sub(r"\b(\d{3,})[ \t\n]+(\d{2})\b", r"\1.\2", txt)
 
     return txt
 
 
 def _to_float(s: str) -> Optional[float]:
-    if s is None:
-        return None
     try:
-        s2 = s.replace(",", "").strip()
-        return float(s2)
+        return float(s.replace(",", "").strip())
     except Exception:
         return None
 
 
 def _split_into_blocks(txt: str) -> List[str]:
-    """
-    OCR often repeats the full T4 template twice and includes a CRA instruction section.
-    We split into blocks so we can select the most "data-rich" issuer block.
-    """
     if not txt:
         return []
 
-    # Common cut markers that begin instructions (usually after the issuer data block)
     cut_markers = [
         "Report these amounts",
         "Veuillez déclarer ces montants",
@@ -64,7 +39,6 @@ def _split_into_blocks(txt: str) -> List[str]:
         "À l'usage de l'Agence du revenu du Canada seulement",
     ]
 
-    # Cut off instruction tail to reduce noise
     cut = len(txt)
     for m in cut_markers:
         idx = txt.find(m)
@@ -72,8 +46,6 @@ def _split_into_blocks(txt: str) -> List[str]:
             cut = min(cut, idx)
     txt = txt[:cut]
 
-    # Split on repeated "T4" headers to isolate repeated template sections.
-    # Keep blocks reasonably large.
     parts = re.split(r"\n\s*T4\s*\n", txt, flags=re.IGNORECASE)
     blocks = []
     for p in parts:
@@ -81,7 +53,6 @@ def _split_into_blocks(txt: str) -> List[str]:
         if len(p) >= 200:
             blocks.append(p)
 
-    # If split didn't work, treat whole as one block
     return blocks if blocks else [txt.strip()]
 
 
@@ -94,13 +65,6 @@ def _extract_year(txt: str) -> Optional[int]:
 
 
 def _extract_employer(txt: str) -> Optional[str]:
-    """
-    Prefer a line that:
-    - looks like a company name,
-    - is not a bilingual header,
-    - and appears near a year/address region.
-    We also strongly prefer lines containing company markers.
-    """
     if not txt:
         return None
 
@@ -124,25 +88,118 @@ def _extract_employer(txt: str) -> Optional[str]:
         re.IGNORECASE
     )
 
-    # Score each line; pick the best-scoring employer-like line.
-    best: Tuple[int, Optional[str]] = (0, None)
+    best_score = -1
+    best_line = None
 
     for i, ln in enumerate(lines):
         low = ln.lower()
 
         if any(b.lower() in low for b in bad_fragments):
             continue
-
-        # Must contain letters
         if not re.search(r"[A-Za-z]", ln):
             continue
-
-        # Avoid lines that are mostly numeric or look like addresses alone
         if re.fullmatch(r"[0-9 .,\-]+", ln):
             continue
 
         score = 0
-
-        # Company marker gets strong weight
         if company_markers.search(ln):
             score += 10
+        if len(ln) >= 6:
+            score += 2
+
+        window = "\n".join(lines[i:i + 7])
+        if re.search(r"\b20\d{2}\b", window):
+            score += 4
+
+        if re.search(r"\b(PO BOX|BOX|ST|AVE|RD|BLVD|BC|AB|ON|QC|MB|SK|NS|NB|NL|NT|NU|YT)\b", window, re.IGNORECASE):
+            score += 2
+
+        if score > best_score:
+            best_score = score
+            best_line = ln
+
+    return best_line
+
+
+def _extract_amounts(txt: str) -> List[float]:
+    if not txt:
+        return []
+    matches = re.findall(r"\b\d{1,3}(?:,\d{3})*\.\d{2}\b|\b\d+\.\d{2}\b", txt)
+    out: List[float] = []
+    for m in matches:
+        v = _to_float(m)
+        if v is not None:
+            out.append(v)
+    return out
+
+
+def _choose_best_block(blocks: List[str]) -> str:
+    best_score = -1
+    best_block = blocks[0] if blocks else ""
+
+    for b in blocks:
+        year = _extract_year(b)
+        employer = _extract_employer(b)
+        amounts = _extract_amounts(b)
+
+        score = 0
+        if year:
+            score += 5
+        score += min(len(amounts), 20)
+        if employer:
+            score += 8
+
+        if score > best_score:
+            best_score = score
+            best_block = b
+
+    return best_block
+
+
+def _extract_core_boxes_from_amounts(amounts: List[float]) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+    if not amounts:
+        return None, None, None, None
+
+    uniq = sorted(set(round(a, 2) for a in amounts))
+    if not uniq:
+        return None, None, None, None
+
+    box14 = max(uniq)
+
+    below_income = [a for a in uniq if a < box14 - 0.009]
+    box22 = max(below_income) if below_income else None
+
+    small = [a for a in uniq if 0 < a <= 2000.00]
+    box18 = min(small) if small else None
+
+    candidates = [a for a in uniq if a > 0]
+    if box22 is not None:
+        candidates = [a for a in candidates if a < box22 - 0.009]
+    if box18 is not None:
+        candidates = [a for a in candidates if a > box18 + 0.009]
+
+    box16 = max(candidates) if candidates else None
+
+    return box14, box22, box16, box18
+
+
+def parse_t4_text(raw_text: str) -> Dict[str, Any]:
+    txt = _clean_text(raw_text)
+    blocks = _split_into_blocks(txt)
+    best = _choose_best_block(blocks)
+
+    year = _extract_year(best)
+    employer = _extract_employer(best)
+
+    amounts = _extract_amounts(best)
+    box14, box22, box16, box18 = _extract_core_boxes_from_amounts(amounts)
+
+    return {
+        "doc_type": "T4 Statement of Remuneration",
+        "employer": employer,
+        "year": year,
+        "box_14_income": box14,
+        "box_22_tax_deducted": box22,
+        "box_16_cpp": box16,
+        "box_18_ei": box18,
+    }

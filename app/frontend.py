@@ -5,7 +5,11 @@ import subprocess
 import shutil
 import re
 from decimal import Decimal
+<<<<<<< Updated upstream
 from typing import Any, Dict, List, Tuple, Optional
+=======
+from typing import Any, List, Tuple
+>>>>>>> Stashed changes
 
 import streamlit as st
 import pandas as pd
@@ -36,7 +40,11 @@ def _get_backend():
     from backend.logic.ocr_engine import scan_pdf
     from backend.logic.t4_parser import parse_t4_text
 
+<<<<<<< Updated upstream
     # New: doc classifier + invoice parser
+=======
+    # Doc classifier + invoice parser
+>>>>>>> Stashed changes
     from backend.logic.doc_classifier import detect_doc_type
     from backend.logic.invoice_parser import parse_invoice_text
 
@@ -91,18 +99,15 @@ def calculate_tax_local(income_type_ui: str, amount: float, province: str, tax_y
 
 def _embed_texts(texts: List[str]) -> List[List[float]]:
     """
-    OpenAI embedding provider (8law default):
-      - text-embedding-3-small (fallback: text-embedding-ada-002)
-
-    Requires:
-      - OPENAI_API_KEY in environment
-    Optional:
-      - OPENAI_EMBED_MODEL in environment
+    OpenAI embedding provider (8law default).
+    Requires OPENAI_API_KEY in environment.
+    Optional OPENAI_EMBED_MODEL.
     """
     from backend.logic.embeddings import embed_texts
     return embed_texts(texts)
 
 
+<<<<<<< Updated upstream
 def scan_and_extract_pdf_local(pdf_bytes: bytes) -> dict:
     """
     Local replacement for document scan + extraction:
@@ -118,22 +123,53 @@ def scan_and_extract_pdf_local(pdf_bytes: bytes) -> dict:
         "scores": {...},
         "extracted": {...}
       }
+=======
+def scan_and_extract_pdf_local(pdf_bytes: bytes, requested_doc_type: str = "auto") -> dict:
+    """
+    OCR -> raw_text -> route parse based on requested_doc_type (or auto-detect).
+
+    requested_doc_type:
+      - "auto" | "t4" | "invoice" | "receipt" | "bank_statement" | "credit_card_statement"
+>>>>>>> Stashed changes
     """
     _, scan_pdf, parse_t4_text, detect_doc_type, parse_invoice_text = _get_backend()
 
     ocr_result = scan_pdf(pdf_bytes)
     raw_text = (ocr_result.get("raw_text") or "").strip()
 
+<<<<<<< Updated upstream
     doc_type, scores = detect_doc_type(raw_text)
+=======
+    # Always compute suggested type for debugging, but only *use* it when requested_doc_type == "auto"
+    suggested_type, scores = detect_doc_type(raw_text)
+    doc_type = suggested_type if requested_doc_type == "auto" else requested_doc_type
+
+    def _not_implemented(dt: str) -> dict:
+        return {
+            "doc_type": dt,
+            "message": f"Parser for '{dt}' not implemented yet. Showing raw text for review.",
+        }
+>>>>>>> Stashed changes
 
     if doc_type == "t4":
         extracted = parse_t4_text(raw_text) or {}
         if isinstance(extracted, dict):
             extracted["doc_type"] = "t4"
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
     elif doc_type == "invoice":
         extracted = parse_invoice_text(raw_text) or {}
         if isinstance(extracted, dict):
             extracted["doc_type"] = "invoice"
+<<<<<<< Updated upstream
+=======
+
+    elif doc_type in {"receipt", "bank_statement", "credit_card_statement"}:
+        extracted = _not_implemented(doc_type)
+
+>>>>>>> Stashed changes
     else:
         extracted = {
             "doc_type": doc_type,
@@ -144,8 +180,15 @@ def scan_and_extract_pdf_local(pdf_bytes: bytes) -> dict:
     return {
         "scan_result": ocr_result,
         "raw_text": raw_text,
+<<<<<<< Updated upstream
         "doc_type": doc_type,
         "scores": scores,
+=======
+        "requested_doc_type": requested_doc_type,
+        "suggested_doc_type": suggested_type,
+        "scores": scores,
+        "doc_type": doc_type,
+>>>>>>> Stashed changes
         "extracted": extracted,
     }
 
@@ -363,7 +406,11 @@ def _render_self_test_panel():
     with st.expander("Self-test / Diagnostics", expanded=False):
         st.caption(
             "Runs quick health checks: backend imports, T1 engine trivial calculation, T4 parser sanity check, "
+<<<<<<< Updated upstream
             "doc classification routing, invoice parser sanity, and OCR dependency validation."
+=======
+            "doc classification, invoice parser sanity, and OCR dependency validation."
+>>>>>>> Stashed changes
         )
 
         if st.button("Run self-tests", type="primary"):
@@ -481,30 +528,81 @@ def main():
     # --- Document Upload ---
     elif nav == "Document Upload":
         st.title("Secure Vault Upload")
+
+        doc_choice = st.selectbox(
+            "Document type",
+            [
+                "Auto-detect (beta)",
+                "T4 (Employment slip)",
+                "Invoice",
+                "Receipt",
+                "Bank statement",
+                "Credit card statement",
+            ],
+            index=0,
+        )
+
+        choice_to_type = {
+            "Auto-detect (beta)": "auto",
+            "T4 (Employment slip)": "t4",
+            "Invoice": "invoice",
+            "Receipt": "receipt",
+            "Bank statement": "bank_statement",
+            "Credit card statement": "credit_card_statement",
+        }
+        requested_doc_type = choice_to_type.get(doc_choice, "auto")
+
         uploaded_file = st.file_uploader("Upload Client Statements (PDF)", type=["pdf"])
 
         if uploaded_file:
             if st.button("Scan & Extract Document", type="primary"):
                 with st.spinner("AI Reading Document..."):
                     try:
+<<<<<<< Updated upstream
                         result = scan_and_extract_pdf_local(uploaded_file.getvalue())
+=======
+                        result = scan_and_extract_pdf_local(
+                            uploaded_file.getvalue(),
+                            requested_doc_type=requested_doc_type,
+                        )
+>>>>>>> Stashed changes
 
                         st.success("Scan Complete!")
 
                         extracted = result.get("extracted", {}) or {}
                         raw_text = result.get("raw_text", "") or ""
                         doc_type = result.get("doc_type", "unknown")
+<<<<<<< Updated upstream
                         scores = result.get("scores", {})
 
                         st.session_state["last_doc"] = result
 
                         st.caption(f"Detected document type: {doc_type} | scores={scores}")
+=======
+                        scores = result.get("scores", {}) or {}
+                        suggested = result.get("suggested_doc_type", "unknown")
+
+                        st.session_state["last_doc"] = result
+
+                        st.caption(
+                            f"Requested: {requested_doc_type} | Used: {doc_type} | Suggested: {suggested} | scores={scores}"
+                        )
+                        if requested_doc_type != "auto" and suggested and suggested != requested_doc_type:
+                            st.warning(
+                                f"Classifier suggests '{suggested}', but you selected '{requested_doc_type}'. "
+                                "Proceeding with your selection."
+                            )
+>>>>>>> Stashed changes
 
                         st.subheader("Extracted Data")
 
                         # ---- T4 rendering ----
                         if doc_type == "t4":
+<<<<<<< Updated upstream
                             st.session_state["t4_data"] = extracted
+=======
+                            st.session_state["t4_data"] = extracted  # only set for actual T4
+>>>>>>> Stashed changes
 
                             col1, col2, col3, col4 = st.columns(4)
                             col1.metric("Income (Box 14)", _fmt_money(extracted.get("box_14_income")))
@@ -517,6 +615,7 @@ def main():
 
                         # ---- Invoice rendering ----
                         elif doc_type == "invoice":
+<<<<<<< Updated upstream
                             # Do NOT overwrite T4 session state with invoice data.
                             col1, col2, col3, col4 = st.columns(4)
                             col1.metric("Total Payable", _fmt_money(extracted.get("total_payable")))
@@ -534,6 +633,49 @@ def main():
                             if isinstance(items, list) and items:
                                 with st.expander("Line Items", expanded=True):
                                     st.table(pd.DataFrame(items))
+=======
+                            # Never overwrite T4 session state with invoice data.
+                            # Use fallback keys to handle parser variations.
+                            total_payable = extracted.get("total_payable") or extracted.get("total") or extracted.get("amount_due")
+                            invoice_date = extracted.get("invoice_date") or extracted.get("date")
+                            gst_amt = extracted.get("gst_hst_amount") or extracted.get("gst") or extracted.get("hst")
+                            pst_amt = extracted.get("pst_amount") or extracted.get("pst")
+
+                            col1, col2, col3, col4 = st.columns(4)
+                            col1.metric("Total Payable", _fmt_money(total_payable))
+                            col2.metric("Invoice Date", _fmt_date(invoice_date))
+                            col3.metric("GST/HST", _fmt_money(gst_amt))
+                            col4.metric("PST", _fmt_money(pst_amt))
+
+                            seller = extracted.get("sold_by") or extracted.get("seller") or extracted.get("vendor") or "—"
+                            st.info(f"Seller Identified: {seller}")
+
+                            invoice_no = extracted.get("invoice_number") or extracted.get("invoice_no")
+                            if invoice_no:
+                                st.write(f"**Invoice #:** {invoice_no}")
+
+                            items = extracted.get("items") or extracted.get("line_items") or []
+                            if isinstance(items, list) and items:
+                                with st.expander("Line Items", expanded=True):
+                                    st.table(pd.DataFrame(items))
+                            else:
+                                st.caption("No line items detected (or invoice parser does not output them yet).")
+
+                        # ---- Receipt rendering (placeholder) ----
+                        elif doc_type == "receipt":
+                            st.warning(extracted.get("message", "Receipt parsing not implemented yet."))
+                            st.json(extracted)
+
+                        # ---- Bank statement rendering (placeholder) ----
+                        elif doc_type == "bank_statement":
+                            st.warning(extracted.get("message", "Bank statement parsing not implemented yet."))
+                            st.json(extracted)
+
+                        # ---- Credit card statement rendering (placeholder) ----
+                        elif doc_type == "credit_card_statement":
+                            st.warning(extracted.get("message", "Credit card statement parsing not implemented yet."))
+                            st.json(extracted)
+>>>>>>> Stashed changes
 
                         # ---- Unknown doc rendering ----
                         else:

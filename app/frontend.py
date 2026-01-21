@@ -3,19 +3,29 @@ import sys
 import time
 import subprocess
 import shutil
+import re
 from decimal import Decimal
+from typing import Any, Dict, List, Tuple, Optional
 
 import streamlit as st
 import pandas as pd
 
-# Make this module safe to import:
-# - Avoid importing backend modules at top-level (prevents circular-import / partial-init issues).
+# -----------------------------------------------------------------------------
+# Streamlit UI (safe to import)
+# -----------------------------------------------------------------------------
+
+# Ensure repo root is on sys.path so we can import backend/app modules reliably.
+# If this file is app/frontend.py, repo root is one level above /app.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 __all__ = ["main"]
 
+
+# -----------------------------------------------------------------------------
+# Lazy backend imports (prevents circular import / partial-init issues)
+# -----------------------------------------------------------------------------
 
 def _get_backend():
     """
@@ -26,19 +36,40 @@ def _get_backend():
     from backend.logic.ocr_engine import scan_pdf
     from backend.logic.t4_parser import parse_t4_text
 
-    return T1DecisionEngine, scan_pdf, parse_t4_text
+    # New: doc classifier + invoice parser
+    from backend.logic.doc_classifier import detect_doc_type
+    from backend.logic.invoice_parser import parse_invoice_text
+
+    return T1DecisionEngine, scan_pdf, parse_t4_text, detect_doc_type, parse_invoice_text
 
 
-def _fmt_money(v):
-    return "—" if v is None else f"${float(v):,.2f}"
+# -----------------------------------------------------------------------------
+# Formatting helpers
+# -----------------------------------------------------------------------------
 
+def _fmt_money(v: Any) -> str:
+    try:
+        if v is None:
+            return "—"
+        return f"${float(v):,.2f}"
+    except Exception:
+        return str(v) if v is not None else "—"
+
+
+def _fmt_date(v: Any) -> str:
+    return str(v) if v else "—"
+
+
+# -----------------------------------------------------------------------------
+# Core operations (local replacements for API endpoints)
+# -----------------------------------------------------------------------------
 
 def calculate_tax_local(income_type_ui: str, amount: float, province: str, tax_year: int = 2024) -> dict:
     """
     Local replacement for POST /tax/calculate
     Adjust the income_type mapping to what your T1DecisionEngine expects.
     """
-    T1DecisionEngine, _, _ = _get_backend()
+    T1DecisionEngine, _, _, _, _ = _get_backend()
 
     income_type_map = {
         "EMPLOYMENT": "T4",
@@ -50,7 +81,7 @@ def calculate_tax_local(income_type_ui: str, amount: float, province: str, tax_y
 
     processed = engine.process_income_stream(income_type, float(amount))
 
-    taxable_source = processed.get("taxable_amount", amount)
+    taxable_source = processed.get("taxable_amount", amount) if isinstance(processed, dict) else amount
     taxable_amt = Decimal(str(taxable_source))
 
     tax_result = engine.calculate_federal_tax(taxable_amt, return_breakdown=True)
@@ -58,7 +89,7 @@ def calculate_tax_local(income_type_ui: str, amount: float, province: str, tax_y
     return {"analysis": processed, "tax_estimate": tax_result}
 
 
-def _embed_texts(texts: list[str]) -> list[list[float]]:
+def _embed_texts(texts: List[str]) -> List[List[float]]:
     """
     OpenAI embedding provider (8law default):
       - text-embedding-3-small (fallback: text-embedding-ada-002)
@@ -69,27 +100,61 @@ def _embed_texts(texts: list[str]) -> list[list[float]]:
       - OPENAI_EMBED_MODEL in environment
     """
     from backend.logic.embeddings import embed_texts
-
     return embed_texts(texts)
 
 
-def scan_and_parse_pdf_local(pdf_bytes: bytes) -> dict:
+def scan_and_extract_pdf_local(pdf_bytes: bytes) -> dict:
     """
-    Local replacement for POST /document/scan
+    Local replacement for document scan + extraction:
+      1) OCR -> raw_text
+      2) Detect document type
+      3) Route to the appropriate parser
+
+    Returns:
+      {
+        "scan_result": {...},
+        "raw_text": "...",
+        "doc_type": "t4"|"invoice"|"...",
+        "scores": {...},
+        "extracted": {...}
+      }
     """
-    _, scan_pdf, parse_t4_text = _get_backend()
+    _, scan_pdf, parse_t4_text, detect_doc_type, parse_invoice_text = _get_backend()
 
     ocr_result = scan_pdf(pdf_bytes)
-    raw_text = (ocr_result.get("raw_text") or "")
-    parsed_data = parse_t4_text(raw_text)
+    raw_text = (ocr_result.get("raw_text") or "").strip()
 
-    return {"scan_result": ocr_result, "parsed_data": parsed_data}
+    doc_type, scores = detect_doc_type(raw_text)
+
+    if doc_type == "t4":
+        extracted = parse_t4_text(raw_text) or {}
+        if isinstance(extracted, dict):
+            extracted["doc_type"] = "t4"
+    elif doc_type == "invoice":
+        extracted = parse_invoice_text(raw_text) or {}
+        if isinstance(extracted, dict):
+            extracted["doc_type"] = "invoice"
+    else:
+        extracted = {
+            "doc_type": doc_type,
+            "scores": scores,
+            "message": "Unrecognized document type. Showing raw text for review.",
+        }
+
+    return {
+        "scan_result": ocr_result,
+        "raw_text": raw_text,
+        "doc_type": doc_type,
+        "scores": scores,
+        "extracted": extracted,
+    }
 
 
-def _safe_import(module_name: str):
-    """
-    Import a module defensively; return (ok, details).
-    """
+# -----------------------------------------------------------------------------
+# Diagnostics helpers
+# -----------------------------------------------------------------------------
+
+def _safe_import(module_name: str) -> Tuple[bool, str]:
     try:
         __import__(module_name)
         return True, f"Imported {module_name}"
@@ -102,8 +167,10 @@ def _run_self_tests() -> dict:
     Runs lightweight diagnostics that should work in Streamlit Cloud:
     - backend imports
     - T1DecisionEngine calculation sanity check
-    - parse_t4_text sanity check with bundled sample text (no OCR)
+    - T4 parser sanity check with bundled sample text (no OCR)
     - OCR dependency validation (python imports + tesseract binary presence/version)
+    - Doc classifier sanity check
+    - Invoice parser sanity check
     """
     results = {
         "timestamp_utc": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
@@ -121,7 +188,7 @@ def _run_self_tests() -> dict:
     # --- Test 1: backend import ---
     t0 = time.time()
     try:
-        T1DecisionEngine, _, parse_t4_text = _get_backend()
+        T1DecisionEngine, _, parse_t4_text, detect_doc_type, parse_invoice_text = _get_backend()
         record(
             "backend_imports",
             True,
@@ -133,7 +200,6 @@ def _run_self_tests() -> dict:
             False,
             {"duration_ms": int((time.time() - t0) * 1000), "error": f"{type(e).__name__}: {e}"},
         )
-        # If backend can't import, downstream tests will be unreliable.
         return results
 
     # --- Test 2: T1DecisionEngine calculation ---
@@ -168,7 +234,7 @@ def _run_self_tests() -> dict:
             {"duration_ms": int((time.time() - t0) * 1000), "error": f"{type(e).__name__}: {e}"},
         )
 
-    # --- Test 3: parser sanity check (no OCR) ---
+    # --- Test 3: T4 parser sanity check (no OCR) ---
     t0 = time.time()
     try:
         sample_t4_text = """
@@ -195,7 +261,58 @@ def _run_self_tests() -> dict:
             {"duration_ms": int((time.time() - t0) * 1000), "error": f"{type(e).__name__}: {e}"},
         )
 
-    # --- Test 4: OCR dependencies validation ---
+    # --- Test 4: doc classifier sanity check ---
+    t0 = time.time()
+    try:
+        invoice_text = "Invoice / Facture\nTotal payable / Total à payer: $26.67\nInvoice # CA386..."
+        t4_text = "T4 Statement of Remuneration Paid\nBox 14 Employment income 50000.00\nBox 22 Income tax deducted 7000.00"
+        doc_a, scores_a = detect_doc_type(invoice_text)
+        doc_b, scores_b = detect_doc_type(t4_text)
+        record(
+            "doc_classifier_sanity",
+            True,
+            {
+                "duration_ms": int((time.time() - t0) * 1000),
+                "invoice_detected": doc_a,
+                "invoice_scores": scores_a,
+                "t4_detected": doc_b,
+                "t4_scores": scores_b,
+            },
+        )
+    except Exception as e:
+        record(
+            "doc_classifier_sanity",
+            False,
+            {"duration_ms": int((time.time() - t0) * 1000), "error": f"{type(e).__name__}: {e}"},
+        )
+
+    # --- Test 5: invoice parser sanity check ---
+    t0 = time.time()
+    try:
+        sample_invoice = """
+        Invoice / Facture
+        Sold by / Vendu par: Amazon.com.ca, Inc
+        Invoice date / Date de facturation: 05 December 2023
+        Invoice # / # de facture: CA386KE42M0I
+        Total payable / Total à payer: $26.67
+        GST/HST # / # de TPS/TVH: 85730 5932 RT0001
+        PST # / # de TVP: PST-1017-2103
+        Total $24.55 -$0.74 $1.19 $1.67 $2.86
+        """
+        parsed = parse_invoice_text(sample_invoice)
+        record(
+            "invoice_parser_sanity",
+            True,
+            {"duration_ms": int((time.time() - t0) * 1000), "parsed_preview": parsed},
+        )
+    except Exception as e:
+        record(
+            "invoice_parser_sanity",
+            False,
+            {"duration_ms": int((time.time() - t0) * 1000), "error": f"{type(e).__name__}: {e}"},
+        )
+
+    # --- Test 6: OCR dependencies validation ---
     t0 = time.time()
     try:
         dep_checks = {}
@@ -243,12 +360,10 @@ def _run_self_tests() -> dict:
 
 
 def _render_self_test_panel():
-    """
-    Renders a diagnostics expander that the user can run on-demand.
-    """
     with st.expander("Self-test / Diagnostics", expanded=False):
         st.caption(
-            "Runs quick health checks: backend imports, T1 engine trivial calculation, T4 parser sanity check, and OCR dependency validation."
+            "Runs quick health checks: backend imports, T1 engine trivial calculation, T4 parser sanity check, "
+            "doc classification routing, invoice parser sanity, and OCR dependency validation."
         )
 
         if st.button("Run self-tests", type="primary"):
@@ -274,15 +389,17 @@ def _render_self_test_panel():
                     st.write(f"❌ {name} — {info.get('error', 'See details above')}")
 
 
+# -----------------------------------------------------------------------------
+# UI
+# -----------------------------------------------------------------------------
+
 def main():
     st.set_page_config(page_title="8law Professional", page_icon="⚖️", layout="wide")
 
     # --- Session State ---
-    if "t4_data" not in st.session_state:
-        st.session_state["t4_data"] = None
-
-    if "authentication_status" not in st.session_state:
-        st.session_state["authentication_status"] = True
+    st.session_state.setdefault("t4_data", None)          # Only set when a T4 is actually detected
+    st.session_state.setdefault("last_doc", None)         # Most recent extracted payload (any doc type)
+    st.session_state.setdefault("authentication_status", True)
 
     # --- Sidebar ---
     with st.sidebar:
@@ -297,7 +414,7 @@ def main():
         st.markdown("---")
         _render_self_test_panel()
 
-    # --- Dashboard Page ---
+    # --- Dashboard ---
     if nav == "Dashboard":
         st.title("Firm Overview")
         st.info("System initialized successfully.")
@@ -312,7 +429,7 @@ def main():
         default_amount = 50000.00
         if st.session_state["t4_data"]:
             t4 = st.session_state["t4_data"]
-            st.success(f"⚡ Data Loaded from T4: {t4.get('employer', 'Unknown Employer')}")
+            st.success(f"Data loaded from T4: {t4.get('employer', 'Unknown Employer')}")
             if t4.get("box_14_income"):
                 try:
                     default_amount = float(t4["box_14_income"])
@@ -324,7 +441,6 @@ def main():
             with col1:
                 income_type_ui = st.selectbox("Income Type", ["EMPLOYMENT", "SELF_EMPLOYED"])
             with col2:
-                # Persist between reruns (Streamlit-style "autofill")
                 amount = st.number_input("Amount ($)", value=float(default_amount), step=100.0, key="tax_amount")
             submitted = st.form_submit_button("Calculate Tax")
 
@@ -347,14 +463,14 @@ def main():
                 with res_col2:
                     st.subheader("Federal Tax Estimate")
 
-                    federal_tax = data["tax_estimate"].get("federal_tax_before_credits")
+                    federal_tax = data["tax_estimate"].get("federal_tax_before_credits") if isinstance(data["tax_estimate"], dict) else None
                     if federal_tax is not None:
                         st.metric("Federal Tax Owing", f"${federal_tax}")
                     else:
                         st.write("Tax estimate:")
                         st.json(data["tax_estimate"])
 
-                    breakdown = data["tax_estimate"].get("bracket_breakdown")
+                    breakdown = data["tax_estimate"].get("bracket_breakdown") if isinstance(data["tax_estimate"], dict) else None
                     if breakdown:
                         with st.expander("View Bracket Breakdown"):
                             st.table(pd.DataFrame(breakdown))
@@ -368,28 +484,61 @@ def main():
         uploaded_file = st.file_uploader("Upload Client Statements (PDF)", type=["pdf"])
 
         if uploaded_file:
-            if st.button("Scan & Parse Document"):
+            if st.button("Scan & Extract Document", type="primary"):
                 with st.spinner("AI Reading Document..."):
                     try:
-                        result = scan_and_parse_pdf_local(uploaded_file.getvalue())
+                        result = scan_and_extract_pdf_local(uploaded_file.getvalue())
 
                         st.success("Scan Complete!")
 
-                        parsed = result.get("parsed_data", {}) or {}
-                        raw_text = (result.get("scan_result", {}) or {}).get("raw_text", "")
+                        extracted = result.get("extracted", {}) or {}
+                        raw_text = result.get("raw_text", "") or ""
+                        doc_type = result.get("doc_type", "unknown")
+                        scores = result.get("scores", {})
 
-                        st.session_state["t4_data"] = parsed
+                        st.session_state["last_doc"] = result
+
+                        st.caption(f"Detected document type: {doc_type} | scores={scores}")
 
                         st.subheader("Extracted Data")
-                        col1, col2, col3, col4 = st.columns(4)
 
-                        col1.metric("Income (Box 14)", _fmt_money(parsed.get("box_14_income")))
-                        col2.metric("Tax Paid (Box 22)", _fmt_money(parsed.get("box_22_tax_deducted")))
-                        col3.metric("CPP (Box 16)", _fmt_money(parsed.get("box_16_cpp")))
-                        col4.metric("EI (Box 18)", _fmt_money(parsed.get("box_18_ei")))
+                        # ---- T4 rendering ----
+                        if doc_type == "t4":
+                            st.session_state["t4_data"] = extracted
 
-                        employer_val = parsed.get("employer") or "—"
-                        st.info(f"Employer Identified: {employer_val}")
+                            col1, col2, col3, col4 = st.columns(4)
+                            col1.metric("Income (Box 14)", _fmt_money(extracted.get("box_14_income")))
+                            col2.metric("Tax Paid (Box 22)", _fmt_money(extracted.get("box_22_tax_deducted")))
+                            col3.metric("CPP (Box 16)", _fmt_money(extracted.get("box_16_cpp")))
+                            col4.metric("EI (Box 18)", _fmt_money(extracted.get("box_18_ei")))
+
+                            employer_val = extracted.get("employer") or "—"
+                            st.info(f"Employer Identified: {employer_val}")
+
+                        # ---- Invoice rendering ----
+                        elif doc_type == "invoice":
+                            # Do NOT overwrite T4 session state with invoice data.
+                            col1, col2, col3, col4 = st.columns(4)
+                            col1.metric("Total Payable", _fmt_money(extracted.get("total_payable")))
+                            col2.metric("Invoice Date", _fmt_date(extracted.get("invoice_date")))
+                            col3.metric("GST/HST", _fmt_money(extracted.get("gst_hst_amount")))
+                            col4.metric("PST", _fmt_money(extracted.get("pst_amount")))
+
+                            seller = extracted.get("sold_by") or extracted.get("seller") or "—"
+                            st.info(f"Seller Identified: {seller}")
+
+                            if extracted.get("invoice_number"):
+                                st.write(f"**Invoice #:** {extracted.get('invoice_number')}")
+
+                            items = extracted.get("items") or []
+                            if isinstance(items, list) and items:
+                                with st.expander("Line Items", expanded=True):
+                                    st.table(pd.DataFrame(items))
+
+                        # ---- Unknown doc rendering ----
+                        else:
+                            st.warning(extracted.get("message", "Unrecognized document type."))
+                            st.json(extracted)
 
                         st.markdown("---")
                         st.warning("⚠️ Algorithm Debugging Zone")

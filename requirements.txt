@@ -27,12 +27,12 @@ streamlit-authenticator>=0.4
 passlib[bcrypt]==1.7.4
 bcrypt>=4.1
 
-# Optional: if you truly run FastAPI in this repo (not needed for Streamlit-only app)
+# Optional: only needed if you actually run FastAPI from this repo
 fastapi>=0.110
 uvicorn>=0.23
 python-multipart>=0.0.9
 
-# Database (choose psycopg v3)
+# Database
 sqlalchemy>=2.0
 psycopg[binary]>=3.2.2,<4
 

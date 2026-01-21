@@ -4,3 +4,12 @@ accountant_pi.db
 data/uploads/*
 .env
 app/.streamlit/secrets.toml
+venv/
+__pycache__/
+*.pyc
+
+
+venv/
+__pycache__/
+*.pyc
+

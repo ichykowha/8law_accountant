@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://unpkg.com/streamlit-component-lib/dist/streamlit-component-lib.js"></script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <style>
+      body { margin: 0; padding: 0; }
+      #widget { display: flex; align-items: center; justify-content: center; }
+    </style>
+  </head>
+  <body>
+    <div id="widget"></div>
+
+    <script>
+      let rendered = false;
+
+      function ensureTurnstileAndRender(siteKey) {
+        if (!window.turnstile) {
+          setTimeout(() => ensureTurnstileAndRender(siteKey), 150);
+          return;
+        }
+        if (rendered) return;
+        rendered = true;
+
+        window.turnstile.render("#widget", {
+          sitekey: siteKey,
+          callback: function(token) {
+            Streamlit.setComponentValue(token);
+          },
+          "expired-callback": function() {
+            Streamlit.setComponentValue(null);
+          },
+          "error-callback": function() {
+            Streamlit.setComponentValue(null);
+          }
+        });
+
+        Streamlit.setFrameHeight(140);
+      }
+
+      function onRender(event) {
+        const args = event.detail.args || {};
+        const siteKey = args.site_key;
+        if (!siteKey) {
+          Streamlit.setComponentValue(null);
+          Streamlit.setFrameHeight(60);
+          return;
+        }
+        ensureTurnstileAndRender(siteKey);
+      }
+
+      Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+      Streamlit.setComponentReady();
+      Streamlit.setFrameHeight(140);
+    </script>
+  </body>
+</html>

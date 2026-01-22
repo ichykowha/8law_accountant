@@ -1,9 +1,13 @@
 # app/supabase_auth.py
 import os
+import re
 import streamlit as st
 from supabase import create_client
 
 
+# -----------------------------
+# Supabase client helpers
+# -----------------------------
 def _get_supabase_public():
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_ANON_KEY")
@@ -24,9 +28,7 @@ def _get_supabase_authed(access_token: str):
     return create_client(
         url,
         key,
-        options={
-            "headers": {"Authorization": f"Bearer {access_token}"},
-        },
+        options={"headers": {"Authorization": f"Bearer {access_token}"}},
     )
 
 
@@ -34,23 +36,114 @@ def _app_url() -> str:
     """
     Base URL where your Streamlit app runs.
     Must be allow-listed in Supabase Auth -> URL Configuration -> Additional Redirect URLs.
-
-    Local default: http://localhost:8501
-    Streamlit Cloud: https://<your-app>.streamlit.app
     """
     return (os.getenv("APP_URL") or "http://localhost:8501").rstrip("/")
 
 
+# -----------------------------
+# Password policy + strength
+# -----------------------------
+PASSWORD_MIN_LEN = 10
+
+_RX_LOWER = re.compile(r"[a-z]")
+_RX_UPPER = re.compile(r"[A-Z]")
+_RX_DIGIT = re.compile(r"\d")
+_RX_SPECIAL = re.compile(r"""[ !"#$%&'()*+,\-./:;<=>?@\[\]^_`{|}~\\]""")  # broad ASCII specials
+
+
+def _password_requirements(password: str) -> dict:
+    pw = password or ""
+    return {
+        "min_len": len(pw) >= PASSWORD_MIN_LEN,
+        "lower": bool(_RX_LOWER.search(pw)),
+        "upper": bool(_RX_UPPER.search(pw)),
+        "digit": bool(_RX_DIGIT.search(pw)),
+        "special": bool(_RX_SPECIAL.search(pw)),
+    }
+
+
+def _password_strength(password: str) -> tuple[int, str]:
+    """
+    Returns (score_0_to_100, label).
+    This is a heuristic meter (no external deps).
+    """
+    req = _password_requirements(password)
+    score = 0
+
+    # Base scoring
+    if req["min_len"]:
+        score += 25
+    if req["lower"]:
+        score += 15
+    if req["upper"]:
+        score += 15
+    if req["digit"]:
+        score += 15
+    if req["special"]:
+        score += 15
+
+    # Bonus for length beyond minimum
+    extra = max(0, len(password or "") - PASSWORD_MIN_LEN)
+    score += min(15, extra)  # up to +15 bonus
+
+    score = max(0, min(100, score))
+
+    if score < 35:
+        label = "Weak"
+    elif score < 60:
+        label = "Fair"
+    elif score < 80:
+        label = "Good"
+    else:
+        label = "Strong"
+
+    return score, label
+
+
 def _validate_password(password: str) -> str | None:
     """
-    Return error string if invalid, else None.
-    Adjust policy later as needed.
+    Returns error string if invalid, else None.
     """
-    if not password or len(password) < 8:
-        return "Password must be at least 8 characters."
-    return None
+    req = _password_requirements(password)
+    if all(req.values()):
+        return None
+
+    missing = []
+    if not req["min_len"]:
+        missing.append(f"at least {PASSWORD_MIN_LEN} characters")
+    if not req["lower"]:
+        missing.append("a lowercase letter")
+    if not req["upper"]:
+        missing.append("an uppercase letter")
+    if not req["digit"]:
+        missing.append("a number")
+    if not req["special"]:
+        missing.append("a special character")
+
+    return "Password must contain " + ", ".join(missing) + "."
 
 
+def _render_password_rules(password: str):
+    """
+    Live checklist + strength bar.
+    """
+    req = _password_requirements(password)
+    score, label = _password_strength(password)
+
+    st.caption("Password requirements:")
+    st.write(("✅" if req["min_len"] else "❌") + f" At least {PASSWORD_MIN_LEN} characters")
+    st.write(("✅" if req["lower"] else "❌") + " Contains a lowercase letter (a-z)")
+    st.write(("✅" if req["upper"] else "❌") + " Contains an uppercase letter (A-Z)")
+    st.write(("✅" if req["digit"] else "❌") + " Contains a number (0-9)")
+    st.write(("✅" if req["special"] else "❌") + " Contains a special character (e.g., ! @ # $ %)")
+
+    st.caption(f"Strength: {label} ({score}/100)")
+    st.progress(score)
+
+
+# -----------------------------
+# Session / auth state
+# -----------------------------
 def is_authenticated() -> bool:
     return bool(st.session_state.get("sb_access_token") and st.session_state.get("sb_user_id"))
 
@@ -75,6 +168,9 @@ def sign_out():
     st.rerun()
 
 
+# -----------------------------
+# UI forms
+# -----------------------------
 def _login_form():
     st.subheader("Sign in")
     email = st.text_input("Email", key="login_email")
@@ -92,7 +188,6 @@ def _login_form():
             session = resp.session
             user = resp.user
 
-            # If "Confirm email" is ON and they haven't confirmed, session can be null.
             if not session:
                 st.error(
                     "Sign-in did not return a session. If you just signed up, you may need to confirm your email first. "
@@ -125,6 +220,9 @@ def _signup_form():
     with col2:
         password2 = st.text_input("Confirm password", type="password", key="signup_password2")
 
+    # Live rules + strength meter
+    _render_password_rules(password)
+
     submitted = st.button("Create account", type="secondary")
 
     if submitted:
@@ -145,20 +243,17 @@ def _signup_form():
         redirect_to = _app_url()
 
         try:
-            resp = sb.auth.sign_up(
+            sb.auth.sign_up(
                 {
                     "email": email,
                     "password": password,
                     "options": {"email_redirect_to": redirect_to},
                 }
             )
-
-            # With Confirm Email enabled, session is usually null until confirmation.
             st.success(
                 "Account created. Check your email for a confirmation link. "
                 f"After confirming, return to {redirect_to} and sign in."
             )
-
         except Exception as e:
             st.error(f"Sign up failed: {type(e).__name__}: {e}")
 
@@ -179,7 +274,6 @@ def _resend_confirmation_form():
         redirect_to = _app_url()
 
         try:
-            # Resends a signup confirmation email (only works if a signup was initiated previously).
             sb.auth.resend(
                 {
                     "type": "signup",

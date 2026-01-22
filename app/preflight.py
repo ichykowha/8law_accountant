@@ -7,19 +7,22 @@ REQUIRED_AT_BOOT = [
     "SUPABASE_ANON_KEY",
 ]
 
+# If you enabled Supabase Captcha protection with Turnstile, you should set this in Streamlit secrets.
+OPTIONAL_AT_BOOT = [
+    "CLOUDFLARE_TURNSTILE_SITE_KEY",
+]
+
 OPTIONAL_FEATURE_SECRETS = [
     "OPENAI_API_KEY",
     "PINECONE_API_KEY",
     "PINECONE_INDEX",
 ]
 
+def _get_secret(key: str):
+    return os.getenv(key) or st.secrets.get(key, None)
+
 def _missing(keys):
-    missing = []
-    for k in keys:
-        v = os.getenv(k) or st.secrets.get(k, None)
-        if not v:
-            missing.append(k)
-    return missing
+    return [k for k in keys if not _get_secret(k)]
 
 def run():
     missing_boot = _missing(REQUIRED_AT_BOOT)
@@ -31,7 +34,14 @@ def run():
         )
         st.stop()
 
-    # Non-blocking notice for feature secrets
+    # Non-blocking notices
+    missing_turnstile = _missing(OPTIONAL_AT_BOOT)
+    if missing_turnstile:
+        st.info(
+            "Turnstile is not configured in Streamlit secrets. If Supabase Captcha protection is enabled, "
+            "set CLOUDFLARE_TURNSTILE_SITE_KEY to render the verification widget in the UI."
+        )
+
     missing_optional = _missing(OPTIONAL_FEATURE_SECRETS)
     if missing_optional:
         st.warning(

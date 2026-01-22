@@ -1,104 +1,113 @@
 # app/auth_supabase.py
+from __future__ import annotations
+
 import os
 import re
 import time
-from typing import Optional, Dict, Any
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 import streamlit as st
 import streamlit.components.v1 as components
-from supabase import create_client
+from supabase import create_client, Client
 
 
-# -----------------------------
-# Config / Secrets
-# -----------------------------
+# =============================================================================
+# Configuration / Secrets
+# =============================================================================
 
-def _secret(key: str, default=None):
-    return os.getenv(key) or st.secrets.get(key, default)
+SUPABASE_URL_KEY = "SUPABASE_URL"
+SUPABASE_ANON_KEY_KEY = "SUPABASE_ANON_KEY"
 
-SUPABASE_URL = _secret("SUPABASE_URL")
-SUPABASE_ANON_KEY = _secret("SUPABASE_ANON_KEY")
+# Optional Turnstile (Cloudflare)
+TURNSTILE_SITE_KEY_KEY = "CLOUDFLARE_TURNSTILE_SITE_KEY"
+TURNSTILE_SECRET_KEY_KEY = "CLOUDFLARE_TURNSTILE_SECRET_KEY"
 
-# Optional: show Turnstile widget in UI if provided
-TURNSTILE_SITE_KEY = _secret("CLOUDFLARE_TURNSTILE_SITE_KEY", None)
-
-# If you want to hard-disable captcha UI (even if site key exists), set to "0"
-TURNSTILE_UI_ENABLED = str(_secret("TURNSTILE_UI_ENABLED", "1")).strip() != "0"
+# Optional: if set, we can enforce stronger client-side policy messaging
+MIN_PASSWORD_LEN_DEFAULT = 8
 
 
-# -----------------------------
-# Supabase client
-# -----------------------------
+def _get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
+    v = os.getenv(name)
+    if v:
+        return v
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
 
-@st.cache_resource(show_spinner=False)
-def _sb():
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+
+def _supabase() -> Client:
+    url = _get_secret(SUPABASE_URL_KEY)
+    anon = _get_secret(SUPABASE_ANON_KEY_KEY)
+    if not url or not anon:
         raise RuntimeError("Missing SUPABASE_URL / SUPABASE_ANON_KEY")
-    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    return create_client(url, anon)
 
 
-# -----------------------------
-# Password policy helpers
-# -----------------------------
+# =============================================================================
+# Turnstile (Optional)
+# =============================================================================
 
-def password_requirements_text(min_len: int = 8) -> str:
-    return (
-        f"Password requirements:\n"
-        f"- At least {min_len} characters\n"
-        f"- At least 1 uppercase letter\n"
-        f"- At least 1 lowercase letter\n"
-        f"- At least 1 number\n"
-        f"- At least 1 symbol (!@#$%^&* etc.)"
-    )
+def _turnstile_html(site_key: str, widget_id: str) -> str:
+    # Streamlit-safe HTML widget that posts token back through a hidden input.
+    # We also expose token via a <textarea> because Streamlit can read it.
+    # Note: This is client-side only; if you want full security, verify token on server.
+    return f"""
+    <div>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
-def password_strength(password: str) -> int:
-    """Returns 0..100 strength score (simple heuristic)."""
-    if not password:
-        return 0
+      <div id="{widget_id}"></div>
 
-    score = 0
-    length = len(password)
+      <textarea id="{widget_id}_token" style="display:none;"></textarea>
 
-    # Length
-    if length >= 8:
-        score += 20
-    if length >= 12:
-        score += 15
-    if length >= 16:
-        score += 10
+      <script>
+        const renderWidget = () => {{
+          if (!window.turnstile) {{
+            setTimeout(renderWidget, 200);
+            return;
+          }}
 
-    # Variety
-    if re.search(r"[A-Z]", password):
-        score += 15
-    if re.search(r"[a-z]", password):
-        score += 15
-    if re.search(r"\d", password):
-        score += 15
-    if re.search(r"[^\w\s]", password):
-        score += 15
+          // avoid double-render
+          const container = document.getElementById("{widget_id}");
+          if (!container || container.dataset.rendered === "1") return;
+          container.dataset.rendered = "1";
 
-    # Penalize very common patterns
-    if re.search(r"(password|1234|qwer|admin|letmein)", password.lower()):
-        score -= 25
+          window.turnstile.render("#{widget_id}", {{
+            sitekey: "{site_key}",
+            callback: function(token) {{
+              const t = document.getElementById("{widget_id}_token");
+              if (t) {{
+                t.value = token;
+                // Trigger an input event so Streamlit notices changes
+                t.dispatchEvent(new Event('input', {{ bubbles: true }}));
+              }}
+            }},
+            'expired-callback': function() {{
+              const t = document.getElementById("{widget_id}_token");
+              if (t) {{
+                t.value = "";
+                t.dispatchEvent(new Event('input', {{ bubbles: true }}));
+              }}
+            }}
+          }});
+        }};
 
-    return max(0, min(100, score))
-
-def is_password_strong(password: str, min_len: int = 8) -> bool:
-    if len(password) < min_len:
-        return False
-    if not re.search(r"[A-Z]", password):
-        return False
-    if not re.search(r"[a-z]", password):
-        return False
-    if not re.search(r"\d", password):
-        return False
-    if not re.search(r"[^\w\s]", password):
-        return False
-    return True
+        renderWidget();
+      </script>
+    </div>
+    """
 
 
-# -----------------------------
-# Turnstile rendering (no custom component build)
-# -----------------------------
+def turnstile_token(site_key: str, key: str = "turnstile") -> Optional[str]:
+    """
+    Renders Turnstile and returns token from browser.
+    Optional: If no token returned yet, returns None.
+    """
+    widget_id = f"{key}_widget"
+    html = _turnstile_html(site_key, widget_id=widget_id)
 
-def turnstile_widget(site_key: str, widget_id: str) -> None_
+    # Height: enough for checkbox. Increase if you use non-interactive/invisible.
+    components.html(html, height=120)
+
+    # Read

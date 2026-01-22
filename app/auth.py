@@ -1,29 +1,39 @@
-import streamlit as st
-import hashlib
+# app/auth.py
+"""
+Deprecated auth shim.
 
-def check_password():
-    """Returns True if the user had the correct password."""
-    
-    # 1. Check if we are already logged in
-    if st.session_state.get("password_correct", False):
+Previous versions used a single shared password + hashlib for demo access.
+8law now uses Supabase Auth (email/password + optional Turnstile), which is required
+for Row Level Security (RLS) and safe multi-tenant operation.
+
+If older code calls check_password(), we treat that as "require login".
+"""
+
+from typing import Optional, Dict
+import streamlit as st
+
+from app.auth_supabase import require_login
+
+
+def check_password() -> bool:
+    """
+    Backwards-compatible name.
+    Returns True when a Supabase user session exists.
+    If not authenticated, renders the Supabase auth UI and returns False.
+    """
+    user = require_login()
+    if user:
+        # Store a familiar flag for any legacy code paths that read it
+        st.session_state["password_correct"] = True
         return True
 
-    # 2. Show Login Form
-    st.title("🔒 8law Secure Access")
-    password = st.text_input("Enter Password", type="password")
-    
-    if st.button("Login"):
-        # SIMPLE SECURITY FOR DEMO:
-        # In real life, we use st.secrets. Here we hardcode a hash for "admin123"
-        # Hash for 'admin123' is: 240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9
-        
-        input_hash = hashlib.sha256(password.encode()).hexdigest()
-        correct_hash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9" 
-        
-        if input_hash == correct_hash:
-            st.session_state["password_correct"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect Password")
-            
+    st.session_state["password_correct"] = False
     return False
+
+
+def current_user() -> Optional[Dict[str, str]]:
+    """
+    Convenience helper for callers that want user identity.
+    """
+    user = require_login()
+    return user

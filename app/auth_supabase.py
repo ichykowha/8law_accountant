@@ -5,26 +5,31 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Optional, Tuple, List
 
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from supabase import create_client, Client
 
 
 # =============================================================================
-# Configuration / Secrets
+# Secrets / Config
 # =============================================================================
 
 SUPABASE_URL_KEY = "SUPABASE_URL"
 SUPABASE_ANON_KEY_KEY = "SUPABASE_ANON_KEY"
 
-# Optional Turnstile (Cloudflare)
+# Turnstile (Cloudflare) optional
 TURNSTILE_SITE_KEY_KEY = "CLOUDFLARE_TURNSTILE_SITE_KEY"
 TURNSTILE_SECRET_KEY_KEY = "CLOUDFLARE_TURNSTILE_SECRET_KEY"
 
-# Optional: if set, we can enforce stronger client-side policy messaging
-MIN_PASSWORD_LEN_DEFAULT = 8
+# Where Supabase email links should redirect after confirmation / recovery
+# Put your Streamlit Cloud URL here.
+AUTH_REDIRECT_URL_KEY = "AUTH_REDIRECT_URL"  # e.g. https://8lawaccountant-xxxxx.streamlit.app
+
+# Client-side UX policy (Supabase enforces server-side too)
+MIN_PASSWORD_LEN_DEFAULT = 10  # recommend 10+ for finance apps
 
 
 def _get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -45,99 +50,90 @@ def _supabase() -> Client:
     return create_client(url, anon)
 
 
-# =============================================================================
-# Turnstile (Optional)
-# =============================================================================
-
-def _turnstile_html(site_key: str, widget_id: str) -> str:
-    # Streamlit-safe HTML widget that posts token back through a hidden input.
-    # We also expose token via a <textarea> because Streamlit can read it.
-    # Note: This is client-side only; if you want full security, verify token on server.
-    return f"""
-    <div>
-      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-
-      <div id="{widget_id}"></div>
-
-      <textarea id="{widget_id}_token" style="display:none;"></textarea>
-
-      <script>
-        const renderWidget = () => {{
-          if (!window.turnstile) {{
-            setTimeout(renderWidget, 200);
-            return;
-          }}
-
-          // avoid double-render
-          const container = document.getElementById("{widget_id}");
-          if (!container || container.dataset.rendered === "1") return;
-          container.dataset.rendered = "1";
-
-          window.turnstile.render("#{widget_id}", {{
-            sitekey: "{site_key}",
-            callback: function(token) {{
-              const t = document.getElementById("{widget_id}_token");
-              if (t) {{
-                t.value = token;
-                // Trigger an input event so Streamlit notices changes
-                t.dispatchEvent(new Event('input', {{ bubbles: true }}));
-              }}
-            }},
-            'expired-callback': function() {{
-              const t = document.getElementById("{widget_id}_token");
-              if (t) {{
-                t.value = "";
-                t.dispatchEvent(new Event('input', {{ bubbles: true }}));
-              }}
-            }}
-          }});
-        }};
-
-        renderWidget();
-      </script>
-    </div>
-    """
-
-
-def turnstile_token(site_key: str, key: str = "turnstile") -> Optional[str]:
-    """
-    Renders Turnstile and returns token from browser.
-    Optional: If no token returned yet, returns None.
-    """
-    widget_id = f"{key}_widget"
-    html = _turnstile_html(site_key, widget_id=widget_id)
-
-    # Height: enough for checkbox. Increase if you use non-interactive/invisible.
-    components.html(html, height=120)
-
-    # Read from a hidden text area via Streamlit state proxy:
-    # We cannot directly read DOM state; instead we ask user to click "I am human"
-    # and then re-run will allow the widget to populate the textarea.
-    # We provide a manual input fallback (still frictionless).
-    token = st.session_state.get(f"{key}_token")
-    # Offer a tiny text_input that can capture pasted tokens (fallback), but hidden-ish.
-    token_ui = st.text_input("Turnstile token (auto-filled)", key=f"{key}_token", label_visibility="collapsed")
-    return token_ui or token
+def _auth_redirect_url() -> Optional[str]:
+    # Prefer explicit secret; otherwise attempt to infer from Streamlit runtime.
+    explicit = _get_secret(AUTH_REDIRECT_URL_KEY)
+    if explicit:
+        return explicit.rstrip("/")
+    # Fallback: Streamlit may provide this in runtime, but do not rely on it.
+    return None
 
 
 # =============================================================================
-# Password policy UX helpers (client-side)
+# Turnstile component (returns token)
+# =============================================================================
+
+_COMPONENT_PATH = os.path.join(os.path.dirname(__file__), "components", "turnstile_component")
+_turnstile_component = None
+if os.path.isdir(_COMPONENT_PATH):
+    _turnstile_component = components.declare_component(
+        "turnstile_component",
+        path=_COMPONENT_PATH,
+    )
+
+
+def turnstile_token(site_key: str, key: str) -> Optional[str]:
+    """
+    Renders Turnstile and returns a token (string) once the user passes.
+    Requires app/components/turnstile_component/index.html to exist.
+    """
+    if not _turnstile_component:
+        st.warning(
+            "Turnstile component not found. Create app/components/turnstile_component/index.html "
+            "from the provided code, or disable Captcha in Supabase."
+        )
+        return None
+
+    # Component returns token or None
+    token = _turnstile_component(site_key=site_key, key=key, default=None)
+    if isinstance(token, str) and token.strip():
+        return token.strip()
+    return None
+
+
+def _verify_turnstile_if_possible(token: Optional[str]) -> Tuple[bool, str]:
+    """
+    Optional server-side verification (defense-in-depth).
+    If TURNSTILE_SECRET is not set, we skip verification and just return OK.
+    """
+    if not token:
+        return False, "Missing Turnstile token."
+
+    secret = _get_secret(TURNSTILE_SECRET_KEY_KEY)
+    if not secret:
+        # Supabase can still verify if captcha protection is enabled on their side,
+        # but we cannot do our own server-side verify without the secret.
+        return True, "Turnstile secret not set; skipping local verification."
+
+    try:
+        resp = requests.post(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            data={"secret": secret, "response": token},
+            timeout=10,
+        )
+        data = resp.json() if resp.ok else {}
+        if data.get("success") is True:
+            return True, "Turnstile verified."
+        # Provide minimal failure detail (avoid leaking anything sensitive)
+        return False, f"Turnstile verification failed: {data.get('error-codes') or 'unknown'}"
+    except Exception as e:
+        return False, f"Turnstile verification error: {type(e).__name__}"
+
+
+# =============================================================================
+# Password UX helpers (client-side)
 # =============================================================================
 
 @dataclass
 class PasswordPolicy:
     min_len: int = MIN_PASSWORD_LEN_DEFAULT
-    require_upper: bool = False
-    require_lower: bool = False
-    require_digit: bool = False
-    require_symbol: bool = False
+    require_upper: bool = True
+    require_lower: bool = True
+    require_digit: bool = True
+    require_symbol: bool = True
 
 
-def _estimate_strength(pw: str, policy: PasswordPolicy) -> tuple[int, list[str]]:
-    """
-    Returns (score 0-100, unmet_rules list).
-    This is UX-only; Supabase server-side rules still apply.
-    """
+def _estimate_strength(pw: str, policy: PasswordPolicy) -> Tuple[int, List[str]]:
     unmet = []
 
     if len(pw) < policy.min_len:
@@ -157,17 +153,16 @@ def _estimate_strength(pw: str, policy: PasswordPolicy) -> tuple[int, list[str]]
     if policy.require_symbol and not has_symbol:
         unmet.append("At least one symbol")
 
-    # Heuristic strength score
     score = 0
-    score += min(len(pw) * 5, 40)  # length contributes up to 40
+    score += min(len(pw) * 4, 40)  # length up to 40
     score += 15 if has_lower else 0
     score += 15 if has_upper else 0
     score += 15 if has_digit else 0
     score += 15 if has_symbol else 0
 
-    # penalize very short
-    if len(pw) < 8:
-        score = min(score, 45)
+    # Penalize short
+    if len(pw) < 10:
+        score = min(score, 55)
     if len(pw) < policy.min_len:
         score = min(score, 35)
 
@@ -189,12 +184,10 @@ def _strength_label(score: int) -> str:
 # Session management
 # =============================================================================
 
-def _set_user_session(user: dict, access_token: Optional[str] = None, refresh_token: Optional[str] = None) -> None:
+def _set_user_session(user: dict, access_token: Optional[str], refresh_token: Optional[str]) -> None:
     st.session_state["auth_user"] = user
-    if access_token:
-        st.session_state["auth_access_token"] = access_token
-    if refresh_token:
-        st.session_state["auth_refresh_token"] = refresh_token
+    st.session_state["auth_access_token"] = access_token
+    st.session_state["auth_refresh_token"] = refresh_token
     st.session_state["auth_last_set_ts"] = time.time()
 
 
@@ -203,50 +196,106 @@ def current_user() -> Optional[dict]:
 
 
 def supabase_logout() -> None:
-    """
-    Safe logout: clears local session. Attempts Supabase signout if possible.
-    """
     try:
         sb = _supabase()
-        # If we have a token, set it and sign out.
         access = st.session_state.get("auth_access_token")
+        refresh = st.session_state.get("auth_refresh_token") or ""
         if access:
-            sb.auth.set_session(access, st.session_state.get("auth_refresh_token") or "")
-        sb.auth.sign_out()
+            # set_session(access, refresh) is supported in newer clients; safe to try
+            try:
+                sb.auth.set_session(access, refresh)
+            except Exception:
+                pass
+        try:
+            sb.auth.sign_out()
+        except Exception:
+            pass
     except Exception:
         pass
 
-    for k in [
-        "auth_user",
-        "auth_access_token",
-        "auth_refresh_token",
-        "auth_last_set_ts",
-    ]:
-        if k in st.session_state:
-            del st.session_state[k]
+    for k in ["auth_user", "auth_access_token", "auth_refresh_token", "auth_last_set_ts"]:
+        st.session_state.pop(k, None)
 
 
 # =============================================================================
-# Auth UI / Flows
+# Resend confirmation (with robust fallback)
+# =============================================================================
+
+def _resend_signup_confirmation(email: str) -> Tuple[bool, str]:
+    """
+    Uses supabase.auth.resend if available, otherwise falls back to REST.
+    Supabase docs show: auth.resend({"type":"signup","email":..., "options":{"email_redirect_to":...}})
+    """
+    sb = _supabase()
+    redirect_to = _auth_redirect_url()
+
+    payload = {"type": "signup", "email": email}
+    if redirect_to:
+        payload["options"] = {"email_redirect_to": redirect_to}
+
+    # Preferred: SDK
+    if hasattr(sb.auth, "resend"):
+        try:
+            sb.auth.resend(payload)
+            return True, "Confirmation email resent. Check inbox/spam."
+        except Exception as e:
+            # fall through to REST
+            sdk_err = f"{type(e).__name__}: {e}"
+    else:
+        sdk_err = "SDK resend() not available."
+
+    # Fallback: REST
+    try:
+        url = _get_secret(SUPABASE_URL_KEY)
+        anon = _get_secret(SUPABASE_ANON_KEY_KEY)
+        if not url or not anon:
+            return False, "Missing SUPABASE_URL / SUPABASE_ANON_KEY."
+
+        r = requests.post(
+            f"{url.rstrip('/')}/auth/v1/resend",
+            headers={
+                "apikey": anon,
+                "Authorization": f"Bearer {anon}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=12,
+        )
+        if 200 <= r.status_code < 300:
+            return True, "Confirmation email resent. Check inbox/spam."
+        return False, f"Resend failed (HTTP {r.status_code}). SDK error was: {sdk_err}"
+    except Exception as e:
+        return False, f"Resend failed. SDK error was: {sdk_err}. REST error: {type(e).__name__}"
+
+
+# =============================================================================
+# Main auth gate
 # =============================================================================
 
 def require_login() -> Optional[dict]:
     """
-    Blocks app until user is authenticated.
-    Returns user dict on success.
+    Blocks app until authenticated. Returns user dict on success.
     """
-    # Already authenticated in session
     u = current_user()
     if u:
         return u
 
     st.title("8law Secure Access")
 
+    site_key = _get_secret(TURNSTILE_SITE_KEY_KEY)
+    secret_key = _get_secret(TURNSTILE_SECRET_KEY_KEY)
+
+    if site_key and not secret_key:
+        st.info(
+            "Turnstile site key is set. For strongest protection, also set "
+            "CLOUDFLARE_TURNSTILE_SECRET_KEY so the app can verify tokens server-side."
+        )
+
     tab_login, tab_signup = st.tabs(["Sign In", "Create Account"])
 
-    # Optional Turnstile
-    site_key = _get_secret(TURNSTILE_SITE_KEY_KEY)
-
+    # ----------------------------
+    # Sign In
+    # ----------------------------
     with tab_login:
         st.subheader("Sign In")
         email = st.text_input("Email", key="auth_login_email")
@@ -258,24 +307,37 @@ def require_login() -> Optional[dict]:
             token = turnstile_token(site_key, key="turnstile_login")
 
         col_a, col_b = st.columns([1, 1])
+
         with col_a:
             if st.button("Sign In", type="primary", key="auth_login_btn"):
                 if not email or not password:
                     st.error("Email and password are required.")
                 else:
+                    if site_key:
+                        ok, msg = _verify_turnstile_if_possible(token)
+                        if not ok:
+                            st.error(msg)
+                            st.stop()
+
                     try:
                         sb = _supabase()
-                        resp = sb.auth.sign_in_with_password({"email": email, "password": password})
-                        # supabase-py returns an object with .user and .session
+                        creds = {"email": email, "password": password}
+
+                        # If Supabase captcha protection is enabled, pass captcha_token
+                        if token:
+                            creds["options"] = {"captcha_token": token}
+
+                        resp = sb.auth.sign_in_with_password(creds)
+
                         user = getattr(resp, "user", None) or (resp.get("user") if isinstance(resp, dict) else None)
                         session = getattr(resp, "session", None) or (resp.get("session") if isinstance(resp, dict) else None)
 
-                        if not user:
+                        if not user or not session:
                             st.error("Sign-in failed. Check credentials and email confirmation status.")
                         else:
-                            access_token = getattr(session, "access_token", None) if session else None
-                            refresh_token = getattr(session, "refresh_token", None) if session else None
-                            _set_user_session(user if isinstance(user, dict) else user.__dict__, access_token, refresh_token)
+                            access = getattr(session, "access_token", None)
+                            refresh = getattr(session, "refresh_token", None)
+                            _set_user_session(user if isinstance(user, dict) else user.__dict__, access, refresh)
                             st.rerun()
                     except Exception as e:
                         st.error(f"Sign-in error: {type(e).__name__}: {e}")
@@ -285,38 +347,35 @@ def require_login() -> Optional[dict]:
                 if not email:
                     st.error("Enter your email above first.")
                 else:
-                    try:
-                        sb = _supabase()
-                        # Newer supabase clients: resend() exists; if not, fall back message
-                        try:
-                            sb.auth.resend({"type": "signup", "email": email})
-                            st.success("Confirmation email resent. Check your inbox and spam folder.")
-                        except Exception:
-                            st.warning(
-                                "Resend API not available in this client version. "
-                                "In Supabase Dashboard, you can also invite/re-send from Auth → Users."
-                            )
-                    except Exception as e:
-                        st.error(f"Resend failed: {type(e).__name__}: {e}")
+                    ok, msg = _resend_signup_confirmation(email)
+                    (st.success if ok else st.error)(msg)
 
         st.markdown("---")
         st.caption(
             "If you get OTP expired errors, increase Email OTP Expiration in Supabase Auth settings, "
-            "and ensure your Streamlit domain is in Supabase Redirect URLs."
+            "and ensure your Streamlit domain is in Supabase Redirect URLs / Additional Redirect URLs."
         )
 
+    # ----------------------------
+    # Create Account
+    # ----------------------------
     with tab_signup:
         st.subheader("Create Account")
         email2 = st.text_input("Email", key="auth_signup_email")
+
         pw1 = st.text_input("Password", type="password", key="auth_signup_pw1")
         pw2 = st.text_input("Confirm password", type="password", key="auth_signup_pw2")
 
-        # Password UX policy (client-side messaging only)
-        policy = PasswordPolicy(min_len=MIN_PASSWORD_LEN_DEFAULT)
+        policy = PasswordPolicy()
         score, unmet = _estimate_strength(pw1 or "", policy)
 
-        st.caption("Password requirements:")
+        st.caption("Password requirements (recommended):")
         st.write(f"- Minimum length: {policy.min_len} characters")
+        st.write("- At least one uppercase letter")
+        st.write("- At least one lowercase letter")
+        st.write("- At least one number")
+        st.write("- At least one symbol")
+
         if unmet:
             st.warning("Missing: " + ", ".join(unmet))
         st.progress(score / 100.0, text=f"Strength: {_strength_label(score)} ({score}/100)")
@@ -329,29 +388,48 @@ def require_login() -> Optional[dict]:
         if st.button("Create Account", type="primary", key="auth_signup_btn"):
             if not email2 or not pw1 or not pw2:
                 st.error("Email, password, and confirmation are required.")
-            elif pw1 != pw2:
+                st.stop()
+
+            if pw1 != pw2:
                 st.error("Passwords do not match.")
-            elif len(pw1) < policy.min_len:
-                st.error(f"Password must be at least {policy.min_len} characters.")
-            else:
-                try:
-                    sb = _supabase()
+                st.stop()
 
-                    # NOTE: Supabase will enforce its own policies (leaked password checks, min length, etc.)
-                    resp = sb.auth.sign_up({"email": email2, "password": pw1})
+            # Client-side guardrails (Supabase also enforces server-side)
+            if len(pw1) < policy.min_len or unmet:
+                st.error("Password does not meet the recommended requirements.")
+                st.stop()
 
-                    user = getattr(resp, "user", None) or (resp.get("user") if isinstance(resp, dict) else None)
-                    if user:
-                        st.success(
-                            "Account created. Check your email for a confirmation link before signing in."
-                        )
-                    else:
-                        st.warning(
-                            "Signup submitted. If you do not receive an email, verify email provider settings "
-                            "in Supabase Auth → Email."
-                        )
-                except Exception as e:
-                    st.error(f"Signup error: {type(e).__name__}: {e}")
+            if site_key:
+                ok, msg = _verify_turnstile_if_possible(token2)
+                if not ok:
+                    st.error(msg)
+                    st.stop()
+
+            try:
+                sb = _supabase()
+                redirect_to = _auth_redirect_url()
+
+                payload = {"email": email2, "password": pw1}
+                options = {}
+                if token2:
+                    options["captcha_token"] = token2
+                if redirect_to:
+                    options["email_redirect_to"] = redirect_to
+                if options:
+                    payload["options"] = options
+
+                resp = sb.auth.sign_up(payload)
+
+                user = getattr(resp, "user", None) or (resp.get("user") if isinstance(resp, dict) else None)
+                if user:
+                    st.success("Account created. Check your email for a confirmation link before signing in.")
+                else:
+                    st.warning(
+                        "Signup submitted. If you do not receive an email, verify email provider settings "
+                        "in Supabase Auth → Email."
+                    )
+            except Exception as e:
+                st.error(f"Signup error: {type(e).__name__}: {e}")
 
     st.stop()
     return None

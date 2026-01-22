@@ -1,41 +1,22 @@
-﻿import os
+# app/preflight.py
+import os
 import streamlit as st
 
-REQUIRED = [
+
+REQUIRED_SECRETS = [
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
     "OPENAI_API_KEY",
     "PINECONE_API_KEY",
     "PINECONE_INDEX",
 ]
 
-OPTIONAL = [
-    "OPENAI_EMBED_MODEL",
-]
-
-def _get(name: str):
-    # Prefer Streamlit secrets, fall back to env
-    try:
-        v = st.secrets.get(name, None)
-    except Exception:
-        v = None
-    return v or os.getenv(name)
 
 def run():
-    missing = []
-    for k in REQUIRED:
-        v = _get(k)
-        if not v or "YOUR_KEY_HERE" in str(v):
-            missing.append(k)
-
+    missing = [k for k in REQUIRED_SECRETS if not os.getenv(k)]
     if missing:
         st.error(
-            "Missing required secrets: " + ", ".join(missing) + "\n\n"
-            "Go to Streamlit Cloud  App  Settings  Secrets and add them.\n"
-            "Until these are set, embeddings / Pinecone will not work."
+            "Missing required secrets: " + ", ".join(missing)
+            + "\n\nGo to Streamlit Cloud App Settings → Secrets and add them."
         )
-        # IMPORTANT: stop before any embedding/upsert logic runs
         st.stop()
-
-    # Optional: show model choice if present
-    emb = _get("OPENAI_EMBED_MODEL")
-    if emb:
-        st.caption(f"Embedding model: {emb}")

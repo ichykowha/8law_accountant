@@ -25,21 +25,30 @@ def _get_supabase_authed(access_token: str):
         url,
         key,
         options={
-            "headers": {
-                "Authorization": f"Bearer {access_token}",
-            }
+            "headers": {"Authorization": f"Bearer {access_token}"},
         },
     )
 
 
-def _email_redirect_url() -> str:
+def _app_url() -> str:
     """
-    Where Supabase should send the user after they click the email confirmation link.
-    IMPORTANT: Must be allow-listed in Supabase Auth -> URL Configuration.
+    Base URL where your Streamlit app runs.
+    Must be allow-listed in Supabase Auth -> URL Configuration -> Additional Redirect URLs.
+
+    Local default: http://localhost:8501
+    Streamlit Cloud: https://<your-app>.streamlit.app
     """
-    # For local dev this should be http://localhost:8501
-    # For Streamlit Cloud set APP_URL in secrets to https://your-app.streamlit.app
     return (os.getenv("APP_URL") or "http://localhost:8501").rstrip("/")
+
+
+def _validate_password(password: str) -> str | None:
+    """
+    Return error string if invalid, else None.
+    Adjust policy later as needed.
+    """
+    if not password or len(password) < 8:
+        return "Password must be at least 8 characters."
+    return None
 
 
 def is_authenticated() -> bool:
@@ -54,12 +63,15 @@ def get_authed_client():
 
 
 def sign_out():
-    st.session_state.pop("sb_access_token", None)
-    st.session_state.pop("sb_refresh_token", None)
-    st.session_state.pop("sb_user_id", None)
-    st.session_state.pop("sb_user_email", None)
-    st.session_state.pop("current_client_id", None)
-    st.session_state.pop("current_client_name", None)
+    for k in [
+        "sb_access_token",
+        "sb_refresh_token",
+        "sb_user_id",
+        "sb_user_email",
+        "current_client_id",
+        "current_client_name",
+    ]:
+        st.session_state.pop(k, None)
     st.rerun()
 
 
@@ -70,21 +82,35 @@ def _login_form():
     submitted = st.button("Sign in", type="primary")
 
     if submitted:
+        if not email or not password:
+            st.error("Email and password are required.")
+            return
+
         sb = _get_supabase_public()
         try:
             resp = sb.auth.sign_in_with_password({"email": email, "password": password})
             session = resp.session
             user = resp.user
-            if not session or not user:
-                st.error("Sign in failed: no session returned.")
+
+            # If "Confirm email" is ON and they haven't confirmed, session can be null.
+            if not session:
+                st.error(
+                    "Sign-in did not return a session. If you just signed up, you may need to confirm your email first. "
+                    "Use the 'Resend confirmation' tab if needed."
+                )
+                return
+            if not user:
+                st.error("Sign in failed: no user returned.")
                 return
 
             st.session_state["sb_access_token"] = session.access_token
             st.session_state["sb_refresh_token"] = session.refresh_token
             st.session_state["sb_user_id"] = user.id
             st.session_state["sb_user_email"] = user.email
+
             st.success("Signed in.")
             st.rerun()
+
         except Exception as e:
             st.error(f"Sign in failed: {type(e).__name__}: {e}")
 
@@ -92,14 +118,33 @@ def _login_form():
 def _signup_form():
     st.subheader("Create account")
     email = st.text_input("Email", key="signup_email")
-    password = st.text_input("Password", type="password", key="signup_password")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        password = st.text_input("Password", type="password", key="signup_password")
+    with col2:
+        password2 = st.text_input("Confirm password", type="password", key="signup_password2")
+
     submitted = st.button("Create account", type="secondary")
 
     if submitted:
+        if not email:
+            st.error("Email is required.")
+            return
+
+        policy_err = _validate_password(password)
+        if policy_err:
+            st.error(policy_err)
+            return
+
+        if password != password2:
+            st.error("Passwords do not match. Please type them exactly the same.")
+            return
+
         sb = _get_supabase_public()
-        redirect_to = _email_redirect_url()
+        redirect_to = _app_url()
+
         try:
-            # Ensure Supabase sends the email link back to your Streamlit app URL
             resp = sb.auth.sign_up(
                 {
                     "email": email,
@@ -108,13 +153,46 @@ def _signup_form():
                 }
             )
 
-            # Many Supabase setups require email confirmation before sign-in works.
+            # With Confirm Email enabled, session is usually null until confirmation.
             st.success(
                 "Account created. Check your email for a confirmation link. "
-                f"If you see a redirect error, confirm anyway, then return to: {redirect_to} and sign in."
+                f"After confirming, return to {redirect_to} and sign in."
             )
+
         except Exception as e:
             st.error(f"Sign up failed: {type(e).__name__}: {e}")
+
+
+def _resend_confirmation_form():
+    st.subheader("Resend confirmation email")
+    st.caption("Use this if the user never received the email or the link expired.")
+
+    email = st.text_input("Email", key="resend_email")
+    submitted = st.button("Resend confirmation", type="primary")
+
+    if submitted:
+        if not email:
+            st.error("Email is required.")
+            return
+
+        sb = _get_supabase_public()
+        redirect_to = _app_url()
+
+        try:
+            # Resends a signup confirmation email (only works if a signup was initiated previously).
+            sb.auth.resend(
+                {
+                    "type": "signup",
+                    "email": email,
+                    "options": {"email_redirect_to": redirect_to},
+                }
+            )
+            st.success(
+                "If that email exists and is pending confirmation, a new confirmation link has been sent. "
+                "Check inbox and spam/junk. Click the newest link."
+            )
+        except Exception as e:
+            st.error(f"Resend failed: {type(e).__name__}: {e}")
 
 
 def require_auth():
@@ -122,12 +200,14 @@ def require_auth():
         return
 
     st.title("8law Secure Sign-in")
-    st.caption("Sign in with Supabase Auth. Tenant isolation is enforced by Postgres RLS.")
+    st.caption("Sign in with Supabase Auth. Tenant isolation should be enforced by Postgres RLS.")
 
-    tab1, tab2 = st.tabs(["Sign in", "Create account"])
+    tab1, tab2, tab3 = st.tabs(["Sign in", "Create account", "Resend confirmation"])
     with tab1:
         _login_form()
     with tab2:
         _signup_form()
+    with tab3:
+        _resend_confirmation_form()
 
     st.stop()

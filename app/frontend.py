@@ -1,14 +1,17 @@
+# app/frontend.py
 import os
 import sys
 import time
 import subprocess
 import shutil
-import re
 from decimal import Decimal
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 import pandas as pd
+
+from app.auth_supabase import require_login, supabase_logout
+
 
 # -----------------------------------------------------------------------------
 # Streamlit UI (safe to import)
@@ -35,8 +38,6 @@ def _get_backend():
     from backend.logic.t1_engine import T1DecisionEngine
     from backend.logic.ocr_engine import scan_pdf
     from backend.logic.t4_parser import parse_t4_text
-
-    # Doc classifier + invoice parser
     from backend.logic.doc_classifier import detect_doc_type
     from backend.logic.invoice_parser import parse_invoice_text
 
@@ -318,8 +319,7 @@ def _run_self_tests() -> dict:
     t0 = time.time()
     try:
         dep_checks = {}
-        # Keep this aligned with requirements.txt to avoid false failures
-        for mod in ["PIL", "pytesseract", "pdfplumber", "pypdf"]:
+        for mod in ["PIL", "pytesseract", "pdfplumber", "pypdf", "pypdfium2"]:
             ok, msg = _safe_import(mod)
             dep_checks[mod] = {"ok": ok, "details": msg}
 
@@ -399,14 +399,23 @@ def _render_self_test_panel():
 def main():
     st.set_page_config(page_title="8law Professional", page_icon="⚖️", layout="wide")
 
+    # --- Require login first ---
+    user = require_login()
+    if not user:
+        return
+
     # --- Session State ---
     st.session_state.setdefault("t4_data", None)          # Only set when a T4 is actually detected
     st.session_state.setdefault("last_doc", None)         # Most recent extracted payload (any doc type)
-    st.session_state.setdefault("authentication_status", True)
 
     # --- Sidebar ---
     with st.sidebar:
         st.title("8law Accountant")
+        st.caption(f"Signed in as: {user.get('email')}")
+        if st.button("Logout"):
+            supabase_logout()
+            st.rerun()
+
         st.markdown("---")
         nav = st.radio(
             "Navigation",
@@ -555,8 +564,6 @@ def main():
 
                         # ---- Invoice rendering ----
                         elif doc_type == "invoice":
-                            # Never overwrite T4 session state with invoice data.
-                            # Use fallback keys to handle parser variations.
                             total_payable = extracted.get("total_payable") or extracted.get("total") or extracted.get("amount_due")
                             invoice_date = extracted.get("invoice_date") or extracted.get("date")
                             gst_amt = extracted.get("gst_hst_amount") or extracted.get("gst") or extracted.get("hst")
@@ -649,7 +656,7 @@ def main():
     # --- Client Management ---
     elif nav == "Client Management":
         st.title("Client Registry")
-        st.write("Database connection can be added here (direct SQLAlchemy or Supabase client).")
+        st.write("Client tables + RLS + selection gate comes next.")
 
 
 if __name__ == "__main__":

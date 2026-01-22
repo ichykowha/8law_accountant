@@ -21,7 +21,6 @@ def _get_supabase_authed(access_token: str):
     if not url or not key:
         raise RuntimeError("Missing SUPABASE_URL or SUPABASE_ANON_KEY")
 
-    # supabase-py allows passing extra headers
     return create_client(
         url,
         key,
@@ -33,14 +32,21 @@ def _get_supabase_authed(access_token: str):
     )
 
 
+def _email_redirect_url() -> str:
+    """
+    Where Supabase should send the user after they click the email confirmation link.
+    IMPORTANT: Must be allow-listed in Supabase Auth -> URL Configuration.
+    """
+    # For local dev this should be http://localhost:8501
+    # For Streamlit Cloud set APP_URL in secrets to https://your-app.streamlit.app
+    return (os.getenv("APP_URL") or "http://localhost:8501").rstrip("/")
+
+
 def is_authenticated() -> bool:
     return bool(st.session_state.get("sb_access_token") and st.session_state.get("sb_user_id"))
 
 
 def get_authed_client():
-    """
-    Returns an authed supabase client (RLS enforced) or raises.
-    """
     token = st.session_state.get("sb_access_token")
     if not token:
         raise RuntimeError("Not authenticated (missing sb_access_token).")
@@ -52,7 +58,6 @@ def sign_out():
     st.session_state.pop("sb_refresh_token", None)
     st.session_state.pop("sb_user_id", None)
     st.session_state.pop("sb_user_email", None)
-    # Also clear client selection on logout
     st.session_state.pop("current_client_id", None)
     st.session_state.pop("current_client_name", None)
     st.rerun()
@@ -92,18 +97,27 @@ def _signup_form():
 
     if submitted:
         sb = _get_supabase_public()
+        redirect_to = _email_redirect_url()
         try:
-            resp = sb.auth.sign_up({"email": email, "password": password})
-            # Depending on Supabase settings, user may need email confirmation.
-            st.success("Account created. If email confirmation is enabled, check your inbox, then sign in.")
+            # Ensure Supabase sends the email link back to your Streamlit app URL
+            resp = sb.auth.sign_up(
+                {
+                    "email": email,
+                    "password": password,
+                    "options": {"email_redirect_to": redirect_to},
+                }
+            )
+
+            # Many Supabase setups require email confirmation before sign-in works.
+            st.success(
+                "Account created. Check your email for a confirmation link. "
+                f"If you see a redirect error, confirm anyway, then return to: {redirect_to} and sign in."
+            )
         except Exception as e:
             st.error(f"Sign up failed: {type(e).__name__}: {e}")
 
 
 def require_auth():
-    """
-    Global auth guard. If not authenticated, show auth UI and stop execution.
-    """
     if is_authenticated():
         return
 

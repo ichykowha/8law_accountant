@@ -5,12 +5,12 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import streamlit as st
-from supabase import Client, create_client
+from supabase import create_client, Client
 
-from app.components.turnstile_component import reset_turnstile, turnstile_token
+from app.components.turnstile_component.turnstile_component import render_turnstile
 
 
 # =============================================================================
@@ -20,7 +20,6 @@ from app.components.turnstile_component import reset_turnstile, turnstile_token
 SUPABASE_URL_KEY = "SUPABASE_URL"
 SUPABASE_ANON_KEY_KEY = "SUPABASE_ANON_KEY"
 
-# Optional Turnstile (Cloudflare)
 TURNSTILE_SITE_KEY_KEY = "CLOUDFLARE_TURNSTILE_SITE_KEY"
 
 MIN_PASSWORD_LEN_DEFAULT = 8
@@ -57,7 +56,7 @@ class PasswordPolicy:
     require_symbol: bool = False
 
 
-def _estimate_strength(pw: str, policy: PasswordPolicy) -> tuple[int, list[str]]:
+def _estimate_strength(pw: str, policy: PasswordPolicy) -> Tuple[int, list[str]]:
     unmet = []
 
     if len(pw) < policy.min_len:
@@ -124,9 +123,16 @@ def supabase_logout() -> None:
     try:
         sb = _supabase()
         access = st.session_state.get("auth_access_token")
-        if access:
-            sb.auth.set_session(access, st.session_state.get("auth_refresh_token") or "")
-        sb.auth.sign_out()
+        refresh = st.session_state.get("auth_refresh_token")
+        if access and refresh:
+            try:
+                sb.auth.set_session(access, refresh)
+            except Exception:
+                pass
+        try:
+            sb.auth.sign_out()
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -135,28 +141,27 @@ def supabase_logout() -> None:
 
 
 # =============================================================================
-# Auth UI / Flows
+# Turnstile helper
 # =============================================================================
 
-def _require_turnstile(site_key: str, component_key: str) -> Optional[str]:
+def _render_captcha(site_key: str, *, key: str) -> Optional[str]:
     """
-    Renders Turnstile and requires completion.
-    Provides a deterministic reset control to break any stuck state.
+    Render Turnstile and return token (or None).
+    We force appearance='always' during debugging so you do not get a “flashing bar”.
     """
-    col_a, col_b = st.columns([1, 1])
-    with col_a:
-        st.caption("Human verification:")
-    with col_b:
-        if st.button("Reset verification", key=f"{component_key}__reset_btn"):
-            reset_turnstile(component_key)
-            st.rerun()
-
-    token = turnstile_token(site_key=site_key, component_key=component_key, height=90)
-    if not token:
-        st.warning("Please complete the human verification.")
-        return None
+    token = render_turnstile(
+        site_key,
+        key=key,
+        theme="auto",
+        size="normal",
+        appearance="always",
+    )
     return token
 
+
+# =============================================================================
+# Auth UI / Flows
+# =============================================================================
 
 def require_login() -> Optional[dict]:
     """
@@ -170,6 +175,7 @@ def require_login() -> Optional[dict]:
     st.title("8law Secure Access")
 
     tab_login, tab_signup = st.tabs(["Sign In", "Create Account"])
+
     site_key = _get_secret(TURNSTILE_SITE_KEY_KEY)
 
     with tab_login:
@@ -179,21 +185,28 @@ def require_login() -> Optional[dict]:
 
         captcha_token = None
         if site_key:
-            captcha_token = _require_turnstile(site_key, component_key="turnstile_login")
+            st.caption("Human verification:")
+            captcha_token = _render_captcha(site_key, key="turnstile_login")
+
+        if site_key and not captcha_token:
+            st.info("Complete the verification to proceed.")
 
         col_a, col_b = st.columns([1, 1])
+
         with col_a:
             if st.button("Sign In", type="primary", key="auth_login_btn"):
                 if not email or not password:
                     st.error("Email and password are required.")
                 elif site_key and not captcha_token:
-                    st.error("Complete the human verification to proceed.")
+                    st.error("Please complete the human verification.")
                 else:
                     try:
                         sb = _supabase()
+
                         payload: Dict[str, Any] = {"email": email, "password": password}
                         if captcha_token:
-                            payload["captcha_token"] = captcha_token
+                            # Supabase expects captchaToken passed in options when CAPTCHA is enabled.
+                            payload["options"] = {"captchaToken": captcha_token}
 
                         resp = sb.auth.sign_in_with_password(payload)
 
@@ -206,10 +219,8 @@ def require_login() -> Optional[dict]:
                             access_token = getattr(session, "access_token", None) if session else None
                             refresh_token = getattr(session, "refresh_token", None) if session else None
                             _set_user_session(user if isinstance(user, dict) else user.__dict__, access_token, refresh_token)
-
-                            # Clear captcha token state after use
-                            reset_turnstile("turnstile_login")
                             st.rerun()
+
                     except Exception as e:
                         st.error(f"Sign-in error: {type(e).__name__}: {e}")
 
@@ -218,24 +229,16 @@ def require_login() -> Optional[dict]:
                 if not email:
                     st.error("Enter your email above first.")
                 elif site_key and not captcha_token:
-                    st.error("Complete the human verification to proceed.")
+                    st.error("Please complete the human verification.")
                 else:
                     try:
                         sb = _supabase()
                         resend_payload: Dict[str, Any] = {"type": "signup", "email": email}
                         if captcha_token:
-                            resend_payload["captcha_token"] = captcha_token
+                            resend_payload["options"] = {"captchaToken": captcha_token}
 
-                        try:
-                            sb.auth.resend(resend_payload)
-                            st.success("Confirmation email resent. Check your inbox and spam folder.")
-                            reset_turnstile("turnstile_login")
-                        except Exception as inner:
-                            st.error(
-                                "Unable to resend via API. You can resend from Supabase Dashboard: "
-                                "Authentication → Users → select user → resend invite/confirmation.\n\n"
-                                f"{type(inner).__name__}: {inner}"
-                            )
+                        sb.auth.resend(resend_payload)
+                        st.success("Confirmation email resent. Check your inbox and spam folder.")
                     except Exception as e:
                         st.error(f"Resend failed: {type(e).__name__}: {e}")
 
@@ -262,7 +265,11 @@ def require_login() -> Optional[dict]:
 
         captcha_token2 = None
         if site_key:
-            captcha_token2 = _require_turnstile(site_key, component_key="turnstile_signup")
+            st.caption("Human verification:")
+            captcha_token2 = _render_captcha(site_key, key="turnstile_signup")
+
+        if site_key and not captcha_token2:
+            st.info("Complete the verification to proceed.")
 
         if st.button("Create Account", type="primary", key="auth_signup_btn"):
             if not email2 or not pw1 or not pw2:
@@ -272,20 +279,19 @@ def require_login() -> Optional[dict]:
             elif len(pw1) < policy.min_len:
                 st.error(f"Password must be at least {policy.min_len} characters.")
             elif site_key and not captcha_token2:
-                st.error("Complete the human verification to proceed.")
+                st.error("Please complete the human verification.")
             else:
                 try:
                     sb = _supabase()
                     payload: Dict[str, Any] = {"email": email2, "password": pw1}
                     if captcha_token2:
-                        payload["captcha_token"] = captcha_token2
+                        payload["options"] = {"captchaToken": captcha_token2}
 
                     resp = sb.auth.sign_up(payload)
                     user = getattr(resp, "user", None) or (resp.get("user") if isinstance(resp, dict) else None)
 
                     if user:
                         st.success("Account created. Check your email for a confirmation link before signing in.")
-                        reset_turnstile("turnstile_signup")
                     else:
                         st.warning(
                             "Signup submitted. If you do not receive an email, verify email provider settings "

@@ -1,0 +1,143 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Turnstile</title>
+    <style>
+      html, body { margin: 0; padding: 0; }
+      #wrap { padding: 6px 0; }
+      #status { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 12px; opacity: 0.75; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <div id="widget"></div>
+      <div id="status"></div>
+    </div>
+
+    <script>
+      // Minimal Streamlit component protocol (no external JS deps).
+      function setFrameHeight(height) {
+        window.parent.postMessage(
+          { isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: height },
+          "*"
+        );
+      }
+
+      function setComponentValue(value) {
+        window.parent.postMessage(
+          { isStreamlitMessage: true, type: "streamlit:setComponentValue", value: value },
+          "*"
+        );
+      }
+
+      const statusEl = document.getElementById("status");
+      const widgetEl = document.getElementById("widget");
+
+      let currentSiteKey = null;
+      let rendered = false;
+      let widgetId = null;
+
+      function setStatus(msg) {
+        statusEl.textContent = msg || "";
+      }
+
+      function loadTurnstileScript(cb) {
+        if (window.turnstile) {
+          cb();
+          return;
+        }
+        const existing = document.querySelector('script[data-turnstile="1"]');
+        if (existing) {
+          // script is loading; poll until available
+          const t = setInterval(() => {
+            if (window.turnstile) {
+              clearInterval(t);
+              cb();
+            }
+          }, 100);
+          return;
+        }
+
+        const s = document.createElement("script");
+        s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+        s.async = true;
+        s.defer = true;
+        s.dataset.turnstile = "1";
+        s.onload = () => cb();
+        s.onerror = () => setStatus("Failed to load Turnstile script.");
+        document.head.appendChild(s);
+      }
+
+      function renderWidget(args) {
+        const siteKey = args.site_key;
+        const theme = args.theme || "auto";
+        const size = args.size || "normal";
+        const appearance = args.appearance || "always";
+
+        if (!siteKey) {
+          setStatus("Missing Turnstile site key.");
+          return;
+        }
+
+        // If sitekey changes, force a clean re-render.
+        if (currentSiteKey !== siteKey) {
+          rendered = false;
+          widgetEl.innerHTML = "";
+          widgetId = null;
+          currentSiteKey = siteKey;
+        }
+
+        if (rendered && widgetId !== null && window.turnstile) {
+          // Already rendered; keep height stable.
+          setFrameHeight(120);
+          return;
+        }
+
+        setStatus("");
+        loadTurnstileScript(() => {
+          try {
+            // Defensive cleanup
+            widgetEl.innerHTML = "";
+            widgetId = window.turnstile.render(widgetEl, {
+              sitekey: siteKey,
+              theme: theme,
+              size: size,
+              appearance: appearance, // "always" forces visible UI when possible
+              callback: (token) => {
+                setComponentValue(token || "");
+                setStatus("");
+              },
+              "expired-callback": () => {
+                setComponentValue("");
+                setStatus("Verification expired. Please retry.");
+              },
+              "error-callback": () => {
+                setComponentValue("");
+                setStatus("Verification error. Please retry.");
+              }
+            });
+
+            rendered = true;
+            setFrameHeight(120);
+          } catch (e) {
+            setStatus("Failed to render Turnstile widget.");
+            setComponentValue("");
+          }
+        });
+      }
+
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (!data || data.type !== "streamlit:render") return;
+
+        const args = data.args || {};
+        renderWidget(args);
+      });
+
+      // initial
+      setFrameHeight(120);
+    </script>
+  </body>
+</html>

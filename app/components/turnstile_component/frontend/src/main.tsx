@@ -23,8 +23,12 @@ type Props = ComponentProps & {
 function TurnstileComponent(props: Props) {
   const { siteKey, theme = "auto", size = "normal" } = props.args;
 
-  const containerId = useMemo(() => `ts_${props.theme?.toString?.() ?? ""}_${Math.random().toString(16).slice(2)}`, []);
-  const renderedRef = useRef(false);
+ const containerId = useMemo(() => `ts_${props.args.siteKey}_${props.width}_${props.height}`.replace(/[^a-zA-Z0-9_]/g, "_"), [
+  props.args.siteKey,
+  props.width,
+  props.height
+]);
+
   const [status, setStatus] = useState<"idle" | "ready" | "solved" | "error">("idle");
 
   // Ensure iframe is tall enough

@@ -253,7 +253,6 @@ def _run_self_tests() -> dict:
         Employee: John Doe
         SIN: 123 456 789
         """
-
         parsed = parse_t4_text(sample_t4_text)
         record(
             "t4_parser_sanity",
@@ -414,9 +413,13 @@ def main():
     # --- HARD client selection gate ---
     client_id, client_name = require_client_selected()
 
+    # Persist for downstream modules
+    st.session_state["active_client_id"] = client_id
+    st.session_state["active_client_name"] = client_name
+
     # --- Session State ---
-    st.session_state.setdefault("t4_data", None)          # Only set when a T4 is actually detected
-    st.session_state.setdefault("last_doc", None)         # Most recent extracted payload (any doc type)
+    st.session_state.setdefault("t4_data", None)
+    st.session_state.setdefault("last_doc", None)
 
     # --- Sidebar ---
     with st.sidebar:
@@ -425,6 +428,7 @@ def main():
 
         st.markdown("**Active Client:**")
         st.write(client_name or "—")
+        st.caption(f"client_id: {client_id}")
 
         colx, coly = st.columns([1, 1])
         with colx:
@@ -482,7 +486,7 @@ def main():
             try:
                 data = calculate_tax_local(
                     income_type_ui=income_type_ui,
-                    amount=amount,
+                    amount=float(amount),  # deterministic cast
                     province="ON",
                     tax_year=2024,
                 )
@@ -497,14 +501,22 @@ def main():
                 with res_col2:
                     st.subheader("Federal Tax Estimate")
 
-                    federal_tax = data["tax_estimate"].get("federal_tax_before_credits") if isinstance(data["tax_estimate"], dict) else None
+                    federal_tax = (
+                        data["tax_estimate"].get("federal_tax_before_credits")
+                        if isinstance(data["tax_estimate"], dict)
+                        else None
+                    )
                     if federal_tax is not None:
                         st.metric("Federal Tax Owing", f"${federal_tax}")
                     else:
                         st.write("Tax estimate:")
                         st.json(data["tax_estimate"])
 
-                    breakdown = data["tax_estimate"].get("bracket_breakdown") if isinstance(data["tax_estimate"], dict) else None
+                    breakdown = (
+                        data["tax_estimate"].get("bracket_breakdown")
+                        if isinstance(data["tax_estimate"], dict)
+                        else None
+                    )
                     if breakdown:
                         with st.expander("View Bracket Breakdown"):
                             st.table(pd.DataFrame(breakdown))
@@ -516,6 +528,7 @@ def main():
     elif nav == "Document Upload":
         st.title("Secure Vault Upload")
         st.caption(f"Uploading into client file: {client_name}")
+        st.caption(f"client_id: {client_id}")
 
         doc_choice = st.selectbox(
             "Document type",
@@ -561,9 +574,12 @@ def main():
 
                         st.session_state["last_doc"] = result
 
+                        # include client context for traceability
                         st.caption(
+                            f"Client: {client_name} | client_id={client_id} | "
                             f"Requested: {requested_doc_type} | Used: {doc_type} | Suggested: {suggested} | scores={scores}"
                         )
+
                         if requested_doc_type != "auto" and suggested and suggested != requested_doc_type:
                             st.warning(
                                 f"Classifier suggests '{suggested}', but you selected '{requested_doc_type}'. "
@@ -574,7 +590,7 @@ def main():
 
                         # ---- T4 rendering ----
                         if doc_type == "t4":
-                            st.session_state["t4_data"] = extracted  # only set for actual T4
+                            st.session_state["t4_data"] = extracted
 
                             col1, col2, col3, col4 = st.columns(4)
                             col1.metric("Income (Box 14)", _fmt_money(extracted.get("box_14_income")))
@@ -668,7 +684,7 @@ def main():
                 upsert_payload = []
                 for c, v in zip(chunks, vectors):
                     md = dict(c.metadata)
-                    md["text"] = c.text  # store snippet for retrieval display
+                    md["text"] = c.text
                     upsert_payload.append((c.id, v, md))
 
                 resp = upsert_chunks(upsert_payload)

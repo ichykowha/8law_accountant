@@ -6,10 +6,8 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
-
 import streamlit as st
 from supabase import Client, create_client
-
 from app.components.turnstile_component import render_turnstile
 
 __all__ = [
@@ -145,6 +143,7 @@ def _set_user_session(user: dict, access_token: Optional[str] = None, refresh_to
     if refresh_token:
         st.session_state["auth_refresh_token"] = refresh_token
     st.session_state["auth_last_set_ts"] = time.time()
+
 
 def current_user() -> Optional[dict]:
     return st.session_state.get("auth_user")

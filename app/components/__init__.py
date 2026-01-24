@@ -1,6 +1,11 @@
 # app/components/__init__.py
-from __future__ import annotations
+"""
+Component package marker.
 
-# Intentionally empty.
-# Import components explicitly from their subpackages, e.g.:
-# from app.components.turnstile_component import render_turnstile
+IMPORTANT:
+Do NOT import Streamlit components here at import-time.
+Streamlit Cloud imports modules during bootstrap; importing component modules here
+can create circular imports and failures if assets are not yet resolved.
+"""
+
+__all__: list[str] = []

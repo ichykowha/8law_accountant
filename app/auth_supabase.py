@@ -12,6 +12,13 @@ from supabase import Client, create_client
 
 from app.components.turnstile_component import render_turnstile
 
+__all__ = [
+    "require_login",
+    "supabase_logout",
+    "current_user",
+    "supabase_for_user",
+]
+
 # =============================================================================
 # Configuration / Secrets
 # =============================================================================
@@ -41,6 +48,32 @@ def _supabase() -> Client:
         raise RuntimeError("Missing SUPABASE_URL / SUPABASE_ANON_KEY")
     return create_client(url, anon)
 
+# =============================================================================
+# Supabase client helpers (anon vs authenticated)
+# =============================================================================
+
+def supabase_for_user() -> Client:
+    """
+    Returns a Supabase client using the current user's access token.
+    This is required for Row Level Security (RLS) to apply correctly.
+    """
+    sb = _supabase()
+
+    access = st.session_state.get("auth_access_token")
+    refresh = st.session_state.get("auth_refresh_token")
+
+    # If we don't have a session yet, return anon client (will usually fail RLS).
+    if not access or not refresh:
+        return sb
+
+    # Bind the session to the client so PostgREST requests include Authorization.
+    try:
+        sb.auth.set_session(access, refresh)
+    except Exception:
+        # If token is invalid/expired, fall back to anon. Caller should handle empty results.
+        pass
+
+    return sb
 
 # =============================================================================
 # Password policy UX helpers (client-side)
@@ -113,9 +146,28 @@ def _set_user_session(user: dict, access_token: Optional[str] = None, refresh_to
         st.session_state["auth_refresh_token"] = refresh_token
     st.session_state["auth_last_set_ts"] = time.time()
 
-
 def current_user() -> Optional[dict]:
     return st.session_state.get("auth_user")
+
+def supabase_for_user() -> Client:
+    """
+    Return a Supabase client authenticated as the currently logged-in user (if tokens exist).
+
+    This is used by DB-scoped modules (client_gate, client_manager) so all PostgREST calls
+    respect RLS with the user's JWT.
+    """
+    sb = _supabase()
+
+    access = st.session_state.get("auth_access_token")
+    refresh = st.session_state.get("auth_refresh_token")
+    if access and refresh:
+        try:
+            sb.auth.set_session(access, refresh)
+        except Exception:
+            # If tokens are invalid/expired, caller will hit auth failures via RLS.
+            pass
+
+    return sb
 
 
 def supabase_logout() -> None:
@@ -297,5 +349,6 @@ def require_login() -> Optional[dict]:
                 except Exception as e:
                     st.error(f"Signup error: {type(e).__name__}: {e}")
 
+ 
     st.stop()
     return None

@@ -1,36 +1,36 @@
 # app/components/turnstile_component/turnstile_component.py
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-# Component build output must exist at:
-# app/components/turnstile_component/frontend/dist
-_COMPONENT_DIR = Path(__file__).resolve().parent
-_FRONTEND_DIST = _COMPONENT_DIR / "frontend" / "dist"
 
-# Optional dev mode:
-# set TURNSTILE_COMPONENT_DEV_URL=http://localhost:5173
-_DEV_URL = st.secrets.get("TURNSTILE_COMPONENT_DEV_URL", None) if hasattr(st, "secrets") else None
+def _secrets_get(name: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Safe secrets getter.
 
-if not _DEV_URL:
-    import os
-    _DEV_URL = os.getenv("TURNSTILE_COMPONENT_DEV_URL")
+    Streamlit will raise StreamlitSecretNotFoundError if secrets.toml does not exist.
+    We must not crash module import in local 'bare' python execution.
+    """
+    try:
+        return st.secrets.get(name, default)  # type: ignore[attr-defined]
+    except Exception:
+        return default
+
+
+_THIS_DIR = Path(__file__).resolve().parent
+_FRONTEND_DIST = _THIS_DIR / "frontend" / "dist"
+
+_DEV_URL = os.getenv("TURNSTILE_COMPONENT_DEV_URL") or _secrets_get("TURNSTILE_COMPONENT_DEV_URL", None)
 
 if _DEV_URL:
     _component = components.declare_component("turnstile_component", url=_DEV_URL)
 else:
-    if not _FRONTEND_DIST.exists():
-        # Fail fast with a clear message rather than Streamlit's generic redaction.
-        raise RuntimeError(
-            f"Turnstile component frontend build not found at: {_FRONTEND_DIST}\n\n"
-            "Fix:\n"
-            "  1) Build the frontend: cd app/components/turnstile_component/frontend && npm install && npm run build\n"
-            "  2) Ensure the dist/ directory is committed to git and deployed.\n"
-        )
+    # In production (Streamlit Cloud), dist must exist in the repo at this exact path.
     _component = components.declare_component("turnstile_component", path=str(_FRONTEND_DIST))
 
 
@@ -41,20 +41,15 @@ def render_turnstile(
     theme: str = "auto",
     size: str = "normal",
     appearance: str = "always",
-) -> Optional[str]:
+) -> str:
     """
-    Render Cloudflare Turnstile and return the token when completed.
+    Render Cloudflare Turnstile via Streamlit custom component.
 
     Returns:
-      - token string when verified
-      - None (or empty) when not yet verified
-
-    Notes:
-      - `appearance` is included for future-proofing (Turnstile supports it in some modes),
-        but the frontend currently focuses on stable rendering + token callbacks.
+      token string if completed, else "".
     """
     if not site_key:
-        return None
+        return ""
 
     token = _component(
         siteKey=site_key,
@@ -65,12 +60,12 @@ def render_turnstile(
         default="",
     )
 
-    if not token:
-        return None
-
+    if token is None:
+        return ""
     if isinstance(token, str):
-        token = token.strip()
-        return token or None
-
-    # Defensive: if Streamlit returns something unexpected
-    return None
+        return token
+    # Defensive: if component returns unexpected payload
+    try:
+        return str(token)
+    except Exception:
+        return ""

@@ -1,321 +1,301 @@
 # app/auth_supabase.py
+from __future__ import annotations
+
 import os
 import re
 import time
-from typing import Optional, Dict, Any
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple
 
 import streamlit as st
-import streamlit.components.v1 as components
-from supabase import create_client
+from supabase import Client, create_client
+
+from app.components.turnstile_component import render_turnstile
+
+# =============================================================================
+# Configuration / Secrets
+# =============================================================================
+
+SUPABASE_URL_KEY = "SUPABASE_URL"
+SUPABASE_ANON_KEY_KEY = "SUPABASE_ANON_KEY"
+
+TURNSTILE_SITE_KEY_KEY = "CLOUDFLARE_TURNSTILE_SITE_KEY"
+
+MIN_PASSWORD_LEN_DEFAULT = 8
 
 
-# -----------------------------
-# Config / Secrets
-# -----------------------------
-
-def _secret(key: str, default=None):
-    return os.getenv(key) or st.secrets.get(key, default)
-
-SUPABASE_URL = _secret("SUPABASE_URL")
-SUPABASE_ANON_KEY = _secret("SUPABASE_ANON_KEY")
-
-# Optional: show Turnstile widget in UI if provided
-TURNSTILE_SITE_KEY = _secret("CLOUDFLARE_TURNSTILE_SITE_KEY", None)
-
-# If you want to hard-disable captcha UI (even if site key exists), set to "0"
-TURNSTILE_UI_ENABLED = str(_secret("TURNSTILE_UI_ENABLED", "1")).strip() != "0"
+def _get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
+    v = os.getenv(name)
+    if v:
+        return v
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
 
 
-# -----------------------------
-# Supabase client
-# -----------------------------
-
-@st.cache_resource(show_spinner=False)
-def _sb():
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+def _supabase() -> Client:
+    url = _get_secret(SUPABASE_URL_KEY)
+    anon = _get_secret(SUPABASE_ANON_KEY_KEY)
+    if not url or not anon:
         raise RuntimeError("Missing SUPABASE_URL / SUPABASE_ANON_KEY")
-    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    return create_client(url, anon)
 
 
-# -----------------------------
-# Password policy helpers
-# -----------------------------
+# =============================================================================
+# Password policy UX helpers (client-side)
+# =============================================================================
 
-def password_requirements_text(min_len: int = 8) -> str:
-    return (
-        f"Password requirements:\n"
-        f"- At least {min_len} characters\n"
-        f"- At least 1 uppercase letter\n"
-        f"- At least 1 lowercase letter\n"
-        f"- At least 1 number\n"
-        f"- At least 1 symbol (!@#$%^&* etc.)"
-    )
+@dataclass
+class PasswordPolicy:
+    min_len: int = MIN_PASSWORD_LEN_DEFAULT
+    require_upper: bool = False
+    require_lower: bool = False
+    require_digit: bool = False
+    require_symbol: bool = False
 
-def password_strength(password: str) -> int:
-    """
-    Returns 0..100 strength score (simple heuristic).
-    """
-    if not password:
-        return 0
+
+def _estimate_strength(pw: str, policy: PasswordPolicy) -> Tuple[int, list[str]]:
+    unmet: list[str] = []
+
+    if len(pw) < policy.min_len:
+        unmet.append(f"At least {policy.min_len} characters")
+
+    has_lower = bool(re.search(r"[a-z]", pw))
+    has_upper = bool(re.search(r"[A-Z]", pw))
+    has_digit = bool(re.search(r"\d", pw))
+    has_symbol = bool(re.search(r"[^A-Za-z0-9]", pw))
+
+    if policy.require_lower and not has_lower:
+        unmet.append("At least one lowercase letter")
+    if policy.require_upper and not has_upper:
+        unmet.append("At least one uppercase letter")
+    if policy.require_digit and not has_digit:
+        unmet.append("At least one number")
+    if policy.require_symbol and not has_symbol:
+        unmet.append("At least one symbol")
 
     score = 0
-    length = len(password)
+    score += min(len(pw) * 5, 40)
+    score += 15 if has_lower else 0
+    score += 15 if has_upper else 0
+    score += 15 if has_digit else 0
+    score += 15 if has_symbol else 0
 
-    # Length
-    if length >= 8: score += 20
-    if length >= 12: score += 15
-    if length >= 16: score += 10
+    if len(pw) < 8:
+        score = min(score, 45)
+    if len(pw) < policy.min_len:
+        score = min(score, 35)
 
-    # Variety
-    if re.search(r"[A-Z]", password): score += 15
-    if re.search(r"[a-z]", password): score += 15
-    if re.search(r"\d", password): score += 15
-    if re.search(r"[^\w\s]", password): score += 15
-
-    # Penalize very common patterns
-    if re.search(r"(password|1234|qwer|admin|letmein)", password.lower()):
-        score -= 25
-
-    return max(0, min(100, score))
-
-def is_password_strong(password: str, min_len: int = 8) -> bool:
-    if len(password) < min_len:
-        return False
-    if not re.search(r"[A-Z]", password):
-        return False
-    if not re.search(r"[a-z]", password):
-        return False
-    if not re.search(r"\d", password):
-        return False
-    if not re.search(r"[^\w\s]", password):
-        return False
-    return True
+    score = max(0, min(score, 100))
+    return score, unmet
 
 
-# -----------------------------
-# Turnstile rendering (no custom component build)
-# -----------------------------
-
-def turnstile_widget(site_key: str, widget_id: str) -> None:
-    """
-    Renders Turnstile in the Streamlit page via HTML.
-    The token is written into a hidden input, and user copies it to paste field.
-    This avoids streamlit component API incompatibilities.
-    """
-    html = f"""
-    <div>
-      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-      <div class="cf-turnstile" data-sitekey="{site_key}" data-theme="light" data-callback="onTurnstileSuccess"></div>
-      <input type="text" id="{widget_id}" placeholder="Turnstile token will appear here" style="width:100%; margin-top:8px;" readonly />
-      <script>
-        function onTurnstileSuccess(token) {{
-          const el = document.getElementById("{widget_id}");
-          if (el) {{
-            el.value = token;
-          }}
-        }}
-      </script>
-      <p style="font-size:12px; color:#666; margin-top:8px;">
-        After verification, copy the token from the field above and paste it into the 'Captcha token' box.
-      </p>
-    </div>
-    """
-    components.html(html, height=260)
-
-def maybe_collect_turnstile_token() -> Optional[str]:
-    """
-    Returns token if Turnstile is enabled/configured, else None.
-    We render widget + text_input for token paste.
-    """
-    if not TURNSTILE_UI_ENABLED:
-        return None
-    if not TURNSTILE_SITE_KEY:
-        return None
-
-    st.markdown("### Human verification (Turnstile)")
-    widget_id = f"ts_token_{int(time.time()*1000)}"
-    turnstile_widget(TURNSTILE_SITE_KEY, widget_id=widget_id)
-    token = st.text_input("Captcha token", help="Copy/paste the token from the Turnstile widget above.")
-    token = (token or "").strip()
-    return token or None
+def _strength_label(score: int) -> str:
+    if score < 35:
+        return "Weak"
+    if score < 60:
+        return "Fair"
+    if score < 80:
+        return "Good"
+    return "Strong"
 
 
-# -----------------------------
-# Session state
-# -----------------------------
+# =============================================================================
+# Session management
+# =============================================================================
 
-def _set_session(user: Dict[str, Any], access_token: str, refresh_token: str):
-    st.session_state["sb_user"] = user
-    st.session_state["sb_access_token"] = access_token
-    st.session_state["sb_refresh_token"] = refresh_token
-
-def _clear_session():
-    for k in ["sb_user", "sb_access_token", "sb_refresh_token"]:
-        if k in st.session_state:
-            del st.session_state[k]
-
-def current_user() -> Optional[Dict[str, Any]]:
-    return st.session_state.get("sb_user")
+def _set_user_session(user: dict, access_token: Optional[str] = None, refresh_token: Optional[str] = None) -> None:
+    st.session_state["auth_user"] = user
+    if access_token:
+        st.session_state["auth_access_token"] = access_token
+    if refresh_token:
+        st.session_state["auth_refresh_token"] = refresh_token
+    st.session_state["auth_last_set_ts"] = time.time()
 
 
-# -----------------------------
-# Supabase Auth Operations
-# -----------------------------
+def current_user() -> Optional[dict]:
+    return st.session_state.get("auth_user")
 
-def supabase_sign_in(email: str, password: str, captcha_token: Optional[str] = None) -> Dict[str, Any]:
-    sb = _sb()
 
-    # Supabase Python SDK versions differ; captcha support may not be exposed.
-    # We'll attempt sign_in normally; if captcha is required server-side and missing,
-    # Supabase will return an error we can display.
-    resp = sb.auth.sign_in_with_password({"email": email, "password": password})
-    # resp contains session + user
-    session = getattr(resp, "session", None)
-    user = getattr(resp, "user", None)
-    if not session or not user:
-        raise RuntimeError("Login failed (no session returned).")
-
-    _set_session(user.model_dump(), session.access_token, session.refresh_token)
-    return {"user": user.model_dump(), "session": {"access_token": session.access_token}}
-
-def supabase_sign_up(email: str, password: str, captcha_token: Optional[str] = None) -> Dict[str, Any]:
-    sb = _sb()
-    # Note: captcha token may be required by your Supabase settings, but SDK may not pass it.
-    # If your Supabase project enforces captcha at signup and SDK cannot pass it, you’ll see an error.
-    resp = sb.auth.sign_up({"email": email, "password": password})
-    user = getattr(resp, "user", None)
-    if not user:
-        raise RuntimeError("Signup failed (no user returned).")
-    return {"user": user.model_dump()}
-
-def supabase_resend_confirmation(email: str) -> None:
-    sb = _sb()
-    # Resend signup confirmation email
-    sb.auth.resend({"type": "signup", "email": email})
-
-def supabase_send_password_reset(email: str) -> None:
-    sb = _sb()
-    sb.auth.reset_password_email(email)
-
-def supabase_sign_out() -> None:
-    sb = _sb()
+def supabase_logout() -> None:
     try:
-        sb.auth.sign_out()
+        sb = _supabase()
+        access = st.session_state.get("auth_access_token")
+        refresh = st.session_state.get("auth_refresh_token")
+        if access and refresh:
+            try:
+                sb.auth.set_session(access, refresh)
+            except Exception:
+                pass
+        try:
+            sb.auth.sign_out()
+        except Exception:
+            pass
     except Exception:
-        # Even if token is already invalid, we still clear local session
         pass
-    _clear_session()
+
+    for k in ["auth_user", "auth_access_token", "auth_refresh_token", "auth_last_set_ts"]:
+        st.session_state.pop(k, None)
 
 
-# -----------------------------
-# UI: Auth Gate
-# -----------------------------
+# =============================================================================
+# Turnstile helper
+# =============================================================================
 
-def _auth_tabs():
-    tab_login, tab_signup, tab_reset = st.tabs(["Sign in", "Create account", "Forgot password"])
-    return tab_login, tab_signup, tab_reset
-
-def _render_login():
-    st.subheader("Sign in")
-
-    email = st.text_input("Email", key="auth_login_email")
-    password = st.text_input("Password", type="password", key="auth_login_password")
-
-    captcha_token = maybe_collect_turnstile_token()
-
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("Sign In", type="primary", key="auth_login_btn"):
-            if not email or not password:
-                st.error("Email and password are required.")
-                return
-            try:
-                supabase_sign_in(email=email.strip(), password=password, captcha_token=captcha_token)
-                st.success("Signed in.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Sign in failed: {e}")
-
-    with col2:
-        if st.button("Resend confirmation email", key="auth_resend_confirm_btn"):
-            if not email:
-                st.error("Enter your email above first.")
-                return
-            try:
-                supabase_resend_confirmation(email=email.strip())
-                st.info("If that email exists, a new confirmation email has been sent.")
-            except Exception as e:
-                st.error(f"Resend failed: {e}")
-
-def _render_signup():
-    st.subheader("Create account")
-
-    email = st.text_input("Email", key="auth_signup_email")
-
-    st.caption(password_requirements_text(min_len=8))
-    pw1 = st.text_input("Password", type="password", key="auth_signup_pw1")
-    strength = password_strength(pw1)
-    st.progress(strength)
-    st.caption(f"Password strength: {strength}/100")
-
-    pw2 = st.text_input("Repeat password", type="password", key="auth_signup_pw2")
-
-    captcha_token = maybe_collect_turnstile_token()
-
-    if st.button("Create account", type="primary", key="auth_signup_btn"):
-        if not email or not pw1 or not pw2:
-            st.error("Email and both password fields are required.")
-            return
-        if pw1 != pw2:
-            st.error("Passwords do not match.")
-            return
-        if not is_password_strong(pw1, min_len=8):
-            st.error("Password does not meet requirements.")
-            return
-
-        try:
-            supabase_sign_up(email=email.strip(), password=pw1, captcha_token=captcha_token)
-            st.success("Account created. Check your email to confirm your account, then return to sign in.")
-        except Exception as e:
-            st.error(f"Signup failed: {e}")
-
-def _render_reset():
-    st.subheader("Reset password")
-    email = st.text_input("Email", key="auth_reset_email")
-
-    if st.button("Send password reset email", type="primary", key="auth_reset_btn"):
-        if not email:
-            st.error("Email is required.")
-            return
-        try:
-            supabase_send_password_reset(email=email.strip())
-            st.info("If that email exists, a password reset email has been sent.")
-        except Exception as e:
-            st.error(f"Reset failed: {e}")
-
-def require_login() -> Optional[Dict[str, Any]]:
+def _render_captcha(site_key: str, *, key: str) -> Optional[str]:
     """
-    Gate for the app. If logged in, returns user dict.
-    Otherwise renders auth UI and returns None.
+    Render Turnstile and return token (or None).
+    appearance='always' helps avoid confusing UI states while debugging.
     """
-    user = current_user()
-    if user:
-        with st.sidebar:
-            st.success(f"Signed in: {user.get('email', 'user')}")
-            if st.button("Sign out", key="auth_sign_out_btn"):
-                supabase_sign_out()
-                st.rerun()
-        return user
+    return render_turnstile(
+        site_key,
+        key=key,
+        theme="auto",
+        size="normal",
+        appearance="always",
+    )
+
+
+# =============================================================================
+# Auth UI / Flows
+# =============================================================================
+
+def require_login() -> Optional[dict]:
+    """
+    Blocks app until user is authenticated.
+    Returns user dict on success.
+    """
+    u = current_user()
+    if u:
+        return u
 
     st.title("8law Secure Access")
-    st.caption("Sign in with your account. This app uses Supabase Auth for multi-tenant security (RLS-ready).")
 
-    tab_login, tab_signup, tab_reset = _auth_tabs()
+    tab_login, tab_signup = st.tabs(["Sign In", "Create Account"])
+
+    site_key = _get_secret(TURNSTILE_SITE_KEY_KEY)
+
     with tab_login:
-        _render_login()
-    with tab_signup:
-        _render_signup()
-    with tab_reset:
-        _render_reset()
+        st.subheader("Sign In")
+        email = st.text_input("Email", key="auth_login_email")
+        password = st.text_input("Password", type="password", key="auth_login_password")
 
+        captcha_token = None
+        if site_key:
+            st.caption("Human verification:")
+            captcha_token = _render_captcha(site_key, key="turnstile_login")
+
+        if site_key and not captcha_token:
+            st.info("Complete the verification to proceed.")
+
+        col_a, col_b = st.columns([1, 1])
+
+        with col_a:
+            if st.button("Sign In", type="primary", key="auth_login_btn"):
+                if not email or not password:
+                    st.error("Email and password are required.")
+                elif site_key and not captcha_token:
+                    st.error("Please complete the human verification.")
+                else:
+                    try:
+                        sb = _supabase()
+
+                        payload: Dict[str, Any] = {"email": email, "password": password}
+                        if captcha_token:
+                            payload["options"] = {"captchaToken": captcha_token}
+
+                        resp = sb.auth.sign_in_with_password(payload)
+
+                        user = getattr(resp, "user", None) or (resp.get("user") if isinstance(resp, dict) else None)
+                        session = getattr(resp, "session", None) or (resp.get("session") if isinstance(resp, dict) else None)
+
+                        if not user:
+                            st.error("Sign-in failed. Check credentials and email confirmation status.")
+                        else:
+                            access_token = getattr(session, "access_token", None) if session else None
+                            refresh_token = getattr(session, "refresh_token", None) if session else None
+                            _set_user_session(user if isinstance(user, dict) else user.__dict__, access_token, refresh_token)
+                            st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Sign-in error: {type(e).__name__}: {e}")
+
+        with col_b:
+            if st.button("Resend confirmation email", key="auth_resend_confirm_btn"):
+                if not email:
+                    st.error("Enter your email above first.")
+                elif site_key and not captcha_token:
+                    st.error("Please complete the human verification.")
+                else:
+                    try:
+                        sb = _supabase()
+                        resend_payload: Dict[str, Any] = {"type": "signup", "email": email}
+                        if captcha_token:
+                            resend_payload["options"] = {"captchaToken": captcha_token}
+
+                        sb.auth.resend(resend_payload)
+                        st.success("Confirmation email resent. Check your inbox and spam folder.")
+                    except Exception as e:
+                        st.error(f"Resend failed: {type(e).__name__}: {e}")
+
+        st.markdown("---")
+        st.caption(
+            "If you see otp_expired, increase Email OTP Expiration in Supabase Auth settings, "
+            "and ensure your app domain is in Supabase Redirect URLs."
+        )
+
+    with tab_signup:
+        st.subheader("Create Account")
+        email2 = st.text_input("Email", key="auth_signup_email")
+        pw1 = st.text_input("Password", type="password", key="auth_signup_pw1")
+        pw2 = st.text_input("Confirm password", type="password", key="auth_signup_pw2")
+
+        policy = PasswordPolicy(min_len=MIN_PASSWORD_LEN_DEFAULT)
+        score, unmet = _estimate_strength(pw1 or "", policy)
+
+        st.caption("Password requirements:")
+        st.write(f"- Minimum length: {policy.min_len} characters")
+        if unmet:
+            st.warning("Missing: " + ", ".join(unmet))
+        st.progress(score / 100.0, text=f"Strength: {_strength_label(score)} ({score}/100)")
+
+        captcha_token2 = None
+        if site_key:
+            st.caption("Human verification:")
+            captcha_token2 = _render_captcha(site_key, key="turnstile_signup")
+
+        if site_key and not captcha_token2:
+            st.info("Complete the verification to proceed.")
+
+        if st.button("Create Account", type="primary", key="auth_signup_btn"):
+            if not email2 or not pw1 or not pw2:
+                st.error("Email, password, and confirmation are required.")
+            elif pw1 != pw2:
+                st.error("Passwords do not match.")
+            elif len(pw1) < policy.min_len:
+                st.error(f"Password must be at least {policy.min_len} characters.")
+            elif site_key and not captcha_token2:
+                st.error("Please complete the human verification.")
+            else:
+                try:
+                    sb = _supabase()
+                    payload: Dict[str, Any] = {"email": email2, "password": pw1}
+                    if captcha_token2:
+                        payload["options"] = {"captchaToken": captcha_token2}
+
+                    resp = sb.auth.sign_up(payload)
+                    user = getattr(resp, "user", None) or (resp.get("user") if isinstance(resp, dict) else None)
+
+                    if user:
+                        st.success("Account created. Check your email for a confirmation link before signing in.")
+                    else:
+                        st.warning(
+                            "Signup submitted. If you do not receive an email, verify email provider settings "
+                            "in Supabase Auth → Email."
+                        )
+                except Exception as e:
+                    st.error(f"Signup error: {type(e).__name__}: {e}")
+
+    st.stop()
     return None

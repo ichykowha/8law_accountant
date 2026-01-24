@@ -1,4 +1,6 @@
 # app/frontend.py
+from __future__ import annotations
+
 import os
 import sys
 import time
@@ -11,6 +13,7 @@ import streamlit as st
 import pandas as pd
 
 from app.auth_supabase import require_login, supabase_logout
+from app.client_gate import require_client_selected, clear_selected_client
 
 
 # -----------------------------------------------------------------------------
@@ -112,7 +115,6 @@ def scan_and_extract_pdf_local(pdf_bytes: bytes, requested_doc_type: str = "auto
     ocr_result = scan_pdf(pdf_bytes)
     raw_text = (ocr_result.get("raw_text") or "").strip()
 
-    # Always compute suggested type for debugging, but only *use* it when requested_doc_type == "auto"
     suggested_type, scores = detect_doc_type(raw_text)
     doc_type = suggested_type if requested_doc_type == "auto" else requested_doc_type
 
@@ -166,16 +168,7 @@ def _safe_import(module_name: str) -> Tuple[bool, str]:
 
 
 def _run_self_tests() -> dict:
-    """
-    Runs lightweight diagnostics that should work in Streamlit Cloud:
-    - backend imports
-    - T1DecisionEngine calculation sanity check
-    - T4 parser sanity check with bundled sample text (no OCR)
-    - OCR dependency validation (python imports + tesseract binary presence/version)
-    - Doc classifier sanity check
-    - Invoice parser sanity check
-    """
-    results = {
+    results: Dict[str, Any] = {
         "timestamp_utc": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
         "tests": {},
         "summary": {"passed": 0, "failed": 0},
@@ -318,7 +311,7 @@ def _run_self_tests() -> dict:
     # --- Test 6: OCR dependencies validation ---
     t0 = time.time()
     try:
-        dep_checks = {}
+        dep_checks: Dict[str, Any] = {}
         for mod in ["PIL", "pytesseract", "pdfplumber", "pypdf", "pypdfium2"]:
             ok, msg = _safe_import(mod)
             dep_checks[mod] = {"ok": ok, "details": msg}
@@ -350,7 +343,11 @@ def _run_self_tests() -> dict:
         record(
             "ocr_dependency_validation",
             overall_ok,
-            {"duration_ms": int((time.time() - t0) * 1000), "checks": dep_checks, "tesseract_version": tesseract_version},
+            {
+                "duration_ms": int((time.time() - t0) * 1000),
+                "checks": dep_checks,
+                "tesseract_version": tesseract_version,
+            },
         )
     except Exception as e:
         record(
@@ -404,17 +401,31 @@ def main():
     if not user:
         return
 
+    # --- HARD client selection gate ---
+    client_id, client_name = require_client_selected()
+
     # --- Session State ---
-    st.session_state.setdefault("t4_data", None)          # Only set when a T4 is actually detected
-    st.session_state.setdefault("last_doc", None)         # Most recent extracted payload (any doc type)
+    st.session_state.setdefault("t4_data", None)
+    st.session_state.setdefault("last_doc", None)
 
     # --- Sidebar ---
     with st.sidebar:
         st.title("8law Accountant")
         st.caption(f"Signed in as: {user.get('email')}")
-        if st.button("Logout"):
-            supabase_logout()
-            st.rerun()
+
+        st.markdown("**Active Client:**")
+        st.write(client_name or "—")
+
+        colx, coly = st.columns([1, 1])
+        with colx:
+            if st.button("Switch Client"):
+                clear_selected_client()
+                st.rerun()
+        with coly:
+            if st.button("Logout"):
+                supabase_logout()
+                clear_selected_client()
+                st.rerun()
 
         st.markdown("---")
         nav = st.radio(
@@ -431,8 +442,9 @@ def main():
         st.title("Firm Overview")
         st.info("System initialized successfully.")
         st.markdown("---")
-        st.subheader("Operational Checks")
-        st.write("Run diagnostics from the sidebar to validate engine wiring and OCR dependencies.")
+        st.subheader("Active Context")
+        st.write(f"Client: **{client_name}**")
+        st.caption(f"client_id: {client_id}")
 
     # --- Tax Calculator ---
     elif nav == "Tax Calculator":
@@ -493,6 +505,7 @@ def main():
     # --- Document Upload ---
     elif nav == "Document Upload":
         st.title("Secure Vault Upload")
+        st.caption(f"Uploading into client file: {client_name}")
 
         doc_choice = st.selectbox(
             "Document type",
@@ -549,9 +562,8 @@ def main():
 
                         st.subheader("Extracted Data")
 
-                        # ---- T4 rendering ----
                         if doc_type == "t4":
-                            st.session_state["t4_data"] = extracted  # only set for actual T4
+                            st.session_state["t4_data"] = extracted
 
                             col1, col2, col3, col4 = st.columns(4)
                             col1.metric("Income (Box 14)", _fmt_money(extracted.get("box_14_income")))
@@ -562,7 +574,6 @@ def main():
                             employer_val = extracted.get("employer") or "—"
                             st.info(f"Employer Identified: {employer_val}")
 
-                        # ---- Invoice rendering ----
                         elif doc_type == "invoice":
                             total_payable = extracted.get("total_payable") or extracted.get("total") or extracted.get("amount_due")
                             invoice_date = extracted.get("invoice_date") or extracted.get("date")
@@ -589,22 +600,18 @@ def main():
                             else:
                                 st.caption("No line items detected (or invoice parser does not output them yet).")
 
-                        # ---- Receipt rendering (placeholder) ----
                         elif doc_type == "receipt":
                             st.warning(extracted.get("message", "Receipt parsing not implemented yet."))
                             st.json(extracted)
 
-                        # ---- Bank statement rendering (placeholder) ----
                         elif doc_type == "bank_statement":
                             st.warning(extracted.get("message", "Bank statement parsing not implemented yet."))
                             st.json(extracted)
 
-                        # ---- Credit card statement rendering (placeholder) ----
                         elif doc_type == "credit_card_statement":
                             st.warning(extracted.get("message", "Credit card statement parsing not implemented yet."))
                             st.json(extracted)
 
-                        # ---- Unknown doc rendering ----
                         else:
                             st.warning(extracted.get("message", "Unrecognized document type."))
                             st.json(extracted)
@@ -617,7 +624,7 @@ def main():
                     except Exception as e:
                         st.error(f"Scan failed: {type(e).__name__}: {e}")
 
-    # --- Knowledge Base (Textbook ingestion) ---
+    # --- Knowledge Base ---
     elif nav == "Knowledge Base":
         st.title("Knowledge Base Ingestion (Textbook)")
 
@@ -645,7 +652,7 @@ def main():
                 upsert_payload = []
                 for c, v in zip(chunks, vectors):
                     md = dict(c.metadata)
-                    md["text"] = c.text  # store snippet for retrieval display
+                    md["text"] = c.text
                     upsert_payload.append((c.id, v, md))
 
                 resp = upsert_chunks(upsert_payload)
@@ -656,7 +663,14 @@ def main():
     # --- Client Management ---
     elif nav == "Client Management":
         st.title("Client Registry")
-        st.write("Client tables + RLS + selection gate comes next.")
+        st.write("Client tables + RLS + selection gate are now wired.")
+        st.markdown("---")
+        st.write(f"Active client: **{client_name}**")
+        st.caption(f"client_id: {client_id}")
+        st.info("Next: document storage + expense_events scoped to client_id.")
+
+    else:
+        st.warning("Unknown navigation state.")
 
 
 if __name__ == "__main__":

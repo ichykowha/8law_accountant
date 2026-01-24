@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Turnstile</title>
+    <script src="https://unpkg.com/streamlit-component-lib@1.4.0/dist/index.js"></script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <style>
+      body { margin: 0; padding: 0; }
+      #widget { padding: 0; }
+    </style>
+  </head>
+
+  <body>
+    <div id="widget"></div>
+
+    <script>
+      const sendValue = (value) => {
+        Streamlit.setComponentValue(value);
+      };
+
+      const onRender = (event) => {
+        const data = event.detail.args || {};
+        const siteKey = data.site_key;
+
+        // Height for Streamlit layout
+        Streamlit.setFrameHeight(120);
+
+        if (!siteKey) {
+          sendValue(null);
+          return;
+        }
+
+        // Ensure we render only once per mount
+        const widgetEl = document.getElementById("widget");
+        if (!widgetEl) return;
+
+        // Clear + re-render (safe on reruns)
+        widgetEl.innerHTML = "";
+
+        const container = document.createElement("div");
+        widgetEl.appendChild(container);
+
+        const tryRender = () => {
+          if (!window.turnstile || !window.turnstile.render) {
+            setTimeout(tryRender, 150);
+            return;
+          }
+
+          window.turnstile.render(container, {
+            sitekey: siteKey,
+            callback: function(token) {
+              sendValue(token);
+            },
+            "expired-callback": function() {
+              sendValue(null);
+            },
+            "error-callback": function() {
+              sendValue(null);
+            }
+          });
+        };
+
+        tryRender();
+      };
+
+      Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+      Streamlit.setComponentReady();
+    </script>
+  </body>
+</html>

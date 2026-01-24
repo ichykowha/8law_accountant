@@ -7,121 +7,116 @@ import streamlit as st
 
 from app.auth_supabase import supabase_for_user
 
+__all__ = [
+    "require_client_selected",
+    "clear_selected_client",
+    "get_selected_client",
+]
+
+# -----------------------------------------------------------------------------
+# Session keys (single source of truth)
+# -----------------------------------------------------------------------------
+_SELECTED_CLIENT_ID_KEY = "selected_client_id"
+_SELECTED_CLIENT_NAME_KEY = "selected_client_name"
+
 
 def _as_dict(row: Any) -> Dict[str, Any]:
+    """
+    Normalize PostgREST rows into plain dicts.
+    The supabase-py client may return dicts already; keep deterministic behavior.
+    """
+    if row is None:
+        return {}
     if isinstance(row, dict):
         return row
-    return getattr(row, "__dict__", {}) or {}
-
-
-def _fetch_clients() -> Tuple[bool, str, list[dict]]:
-    """
-    Returns (ok, error_message, client_rows)
-
-    Relies on RLS to filter to the authenticated user's rows.
-    """
+    # Fallback for objects with __dict__
     try:
-        sb = supabase_for_user()
-        resp = (
-            sb.table("clients")
-            .select("id, display_name, entity_type, currency, created_at")
-            .order("display_name")
-            .execute()
-        )
-        rows = getattr(resp, "data", None) or (resp.get("data") if isinstance(resp, dict) else None) or []
-        return True, "", [dict(r) for r in rows]
-    except Exception as e:
-        return False, f"{type(e).__name__}: {e}", []
+        return dict(row.__dict__)
+    except Exception:
+        return {"value": row}
 
 
-def _insert_client(display_name: str, entity_type: str, currency: str) -> Tuple[bool, str]:
+def get_selected_client() -> Tuple[Optional[str], Optional[str]]:
     """
-    Inserts a client row.
-
-    - created_by is omitted and will default to auth.uid()
-    - handles unique constraint (created_by, display_name)
+    Returns (client_id, client_name) from session state, if set.
     """
-    display_name = (display_name or "").strip()
-    if not display_name:
-        return False, "Client display name is required."
-
-    entity_type = (entity_type or "Individual").strip() or "Individual"
-    currency = (currency or "CAD").strip() or "CAD"
-
-    try:
-        sb = supabase_for_user()
-        payload = {
-            "display_name": display_name,
-            "entity_type": entity_type,
-            "currency": currency,
-        }
-        sb.table("clients").insert(payload).execute()
-        return True, ""
-    except Exception as e:
-        msg = f"{type(e).__name__}: {e}"
-        # Best-effort detection for Postgres unique violation
-        if "clients_unique_display_name_per_user" in msg or "duplicate key value violates unique constraint" in msg:
-            return False, "A client with that display name already exists for your account."
-        return False, msg
+    return (
+        st.session_state.get(_SELECTED_CLIENT_ID_KEY),
+        st.session_state.get(_SELECTED_CLIENT_NAME_KEY),
+    )
 
 
-def require_client_selected(user: dict) -> Optional[dict]:
+def clear_selected_client() -> None:
     """
-    Gate: user must select (or create) a client before proceeding.
+    Clears client selection from session_state.
 
-    Session keys:
-      - selected_client_id
-      - selected_client_display_name
+    This must exist because app/frontend.py calls it when user clicks 'Switch Client'
+    or on logout.
     """
-    st.session_state.setdefault("selected_client_id", None)
-    st.session_state.setdefault("selected_client_display_name", None)
+    st.session_state.pop(_SELECTED_CLIENT_ID_KEY, None)
+    st.session_state.pop(_SELECTED_CLIENT_NAME_KEY, None)
 
-    # Already selected
-    if st.session_state.get("selected_client_id"):
-        return {
-            "id": st.session_state["selected_client_id"],
-            "display_name": st.session_state.get("selected_client_display_name"),
-        }
+
+def require_client_selected() -> Tuple[str, str]:
+    """
+    HARD gate: forces the user to select a client before accessing the rest of the app.
+
+    Returns:
+        (client_id, client_name) – always non-empty once selected.
+
+    Data access is performed via supabase_for_user() so RLS is enforced.
+    """
+    client_id, client_name = get_selected_client()
+    if client_id and client_name:
+        return str(client_id), str(client_name)
 
     st.title("Select Client")
 
-    ok, err, clients = _fetch_clients()
-    if not ok:
-        st.error("Unable to load clients from Supabase (RLS + JWT required).")
-        st.code(err)
+    sb = supabase_for_user()
+
+    # Pull available clients (RLS should scope to created_by = auth.uid())
+    try:
+        resp = (
+            sb.table("clients")
+            .select("id, display_name")
+            .order("display_name", desc=False)
+            .execute()
+        )
+        rows = resp.data or []
+    except Exception as e:
+        st.error(f"Failed to load clients: {type(e).__name__}: {e}")
         st.stop()
+        raise
 
-    # Create new client panel
-    with st.expander("Create new client", expanded=(len(clients) == 0)):
-        new_display_name = st.text_input("Client display name", key="client_create_display_name")
-        entity_type = st.selectbox("Entity type", ["Individual", "Corporation", "Sole Proprietor", "Partnership"], index=0)
-        currency = st.selectbox("Currency", ["CAD", "USD"], index=0)
-
-        if st.button("Create Client", type="primary", key="client_create_btn"):
-            ok2, err2 = _insert_client(new_display_name, entity_type, currency)
-            if not ok2:
-                st.error("Create client failed.")
-                st.write(err2)
-            else:
-                st.success("Client created.")
-                st.rerun()
-
-    if not clients:
-        st.info("No clients exist yet. Create one above to proceed.")
+    if not rows:
+        st.warning("No clients found for this account yet.")
+        st.info("Go to 'Client Management' after login (or seed one row in public.clients).")
         st.stop()
+        raise RuntimeError("No clients available")
 
-    # Select existing client
-    options = {f"{c['display_name']} ({c['id']})": c for c in clients}
-    pick = st.selectbox("Existing clients", list(options.keys()), key="client_select_existing")
+    # Deterministic mapping for selectbox
+    rows = [_as_dict(r) for r in rows]
+    options = [(str(r["id"]), str(r.get("display_name") or "—")) for r in rows]
 
-    if st.button("Continue", type="primary", key="client_continue_btn"):
-        chosen = options.get(pick)
-        if not chosen:
-            st.error("Select a client to continue.")
-        else:
-            st.session_state["selected_client_id"] = chosen["id"]
-            st.session_state["selected_client_display_name"] = chosen["display_name"]
-            st.rerun()
+    labels = [name for (_id, name) in options]
+    selected_label = st.selectbox("Client", labels, index=0)
+
+    # Resolve selection back to id (first match is deterministic due to unique constraint)
+    selected_id = None
+    for cid, name in options:
+        if name == selected_label:
+            selected_id = cid
+            break
+
+    if st.button("Continue", type="primary"):
+        if not selected_id:
+            st.error("Select a client.")
+            st.stop()
+            raise RuntimeError("Client selection missing")
+
+        st.session_state[_SELECTED_CLIENT_ID_KEY] = selected_id
+        st.session_state[_SELECTED_CLIENT_NAME_KEY] = selected_label
+        st.rerun()
 
     st.stop()
-    return None
+    raise RuntimeError("Client not selected yet")

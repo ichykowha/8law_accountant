@@ -1,5 +1,9 @@
 # app/preflight.py
+from __future__ import annotations
+
 import os
+from typing import Optional, Iterable, List
+
 import streamlit as st
 
 REQUIRED_AT_BOOT = [
@@ -19,20 +23,38 @@ OPTIONAL_FEATURE_SECRETS = [
 ]
 
 
-def _get_secret(key: str):
-    return os.getenv(key) or st.secrets.get(key, None)
+def _secrets_get(key: str) -> Optional[str]:
+    """
+    Streamlit-safe secret getter:
+    - env first
+    - then st.secrets if available
+    - NEVER throws if secrets.toml is missing
+    """
+    v = os.getenv(key)
+    if v:
+        return v
+
+    try:
+        return st.secrets.get(key, None)  # type: ignore[attr-defined]
+    except Exception:
+        return None
 
 
-def _missing(keys):
-    return [k for k in keys if not _get_secret(k)]
+def _missing(keys: Iterable[str]) -> List[str]:
+    return [k for k in keys if not _secrets_get(k)]
 
 
-def run():
+def run() -> None:
     missing_boot = _missing(REQUIRED_AT_BOOT)
     if missing_boot:
         st.error(
-            "Missing required secrets: " + ", ".join(missing_boot) + "\n\n"
-            "Add them in Streamlit Cloud → App Settings → Secrets.\n\n"
+            "Missing required secrets: "
+            + ", ".join(missing_boot)
+            + "\n\n"
+            "Set them via one of the following:\n"
+            "- Streamlit Cloud → App Settings → Secrets\n"
+            "- Local dev: create .streamlit/secrets.toml in the repo root\n"
+            "- Or set environment variables before launching Streamlit\n\n"
             "Until these are set, authentication and database access will not work."
         )
         st.stop()
@@ -41,7 +63,7 @@ def run():
     missing_turnstile = _missing(OPTIONAL_AT_BOOT)
     if missing_turnstile:
         st.info(
-            "Turnstile is not configured in Streamlit secrets. If Supabase Captcha protection is enabled, "
+            "Turnstile is not configured. If Supabase CAPTCHA protection is enabled, "
             "set CLOUDFLARE_TURNSTILE_SITE_KEY to render the verification widget in the UI."
         )
 

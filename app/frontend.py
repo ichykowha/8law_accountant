@@ -1,9 +1,10 @@
+
+from __future__ import annotations
 from backend.realtime_collab import update_state, get_state
 from backend.encryption import generate_key, encrypt_data, decrypt_data
 from backend.ai_assistant import ask_ai_assistant
 from backend.analytics_dashboard import get_trends, get_risk_insights
 # app/frontend.py
-from __future__ import annotations
 
 import os
 import sys

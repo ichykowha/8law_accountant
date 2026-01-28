@@ -1,0 +1,35 @@
+openapi: 3.0.0
+info:
+  title: 8law API
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      summary: List users
+      responses:
+        '200':
+          description: List of users
+  /logs:
+    get:
+      summary: Get logs
+      responses:
+        '200':
+          description: List of logs
+  /health:
+    get:
+      summary: Get system health
+      responses:
+        '200':
+          description: System health info
+  /notifications/{user_id}:
+    get:
+      summary: Get notifications for a user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of notifications

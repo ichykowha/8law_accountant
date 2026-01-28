@@ -44,9 +44,9 @@ def _get_database_url() -> str:
         except Exception:
             pass
 
-    raise ValueError(
-        "DATABASE_URL is missing. Set it as an environment variable, or define it in Streamlit secrets."
-    )
+    # 3) Fallback: use local SQLite for development
+    print("Warning: DATABASE_URL is missing. Using local SQLite database for development.")
+    return "sqlite:///8law.db"
 
 
 DATABASE_URL = _get_database_url()
@@ -57,11 +57,12 @@ if DATABASE_URL.startswith("postgres://"):
 
 # Create engine
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-from sqlalchemy import text
 
-with engine.connect() as conn:
-    row = conn.execute(text("select current_database(), current_user")).first()
-    print("DB CONNECTED TO:", row)
+from sqlalchemy import text
+if DATABASE_URL.startswith("postgresql"):
+    with engine.connect() as conn:
+        row = conn.execute(text("select current_database(), current_user")).first()
+        print("DB CONNECTED TO:", row)
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

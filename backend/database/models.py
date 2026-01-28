@@ -1,15 +1,15 @@
-
 # ------------------------------------------------------------------------------
 # 8law - Super Accountant
 # Module: Database Models (ORM)
 # File: backend/database/models.py
 # ------------------------------------------------------------------------------
 
-from sqlalchemy import Column, Integer, String, DECIMAL, ForeignKey, DateTime, JSON
+from sqlalchemy import Column, Integer, String, DECIMAL, ForeignKey, DateTime, JSON, Float
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
+from datetime import datetime, timezone
 
 Base = declarative_base()
 
@@ -74,3 +74,17 @@ class IncomeSlip(Base):
     raw_data = Column(JSON, nullable=False)    # {"box14": 50000, "box22": 10000}
     
     tax_return = relationship("TaxReturn", back_populates="slips")
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    amount = Column(Float, nullable=False)
+    description = Column(String)
+    category = Column(String)
+    vendor = Column(String)
+    source = Column(String)  # e.g., 'bank', 'receipt', 'manual'
+    status = Column(String, default="pending")  # e.g., 'pending', 'reviewed', 'reconciled'
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    user = relationship("User", backref="transactions")

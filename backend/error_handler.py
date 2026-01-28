@@ -1,3 +1,10 @@
+import logging
+from datetime import datetime
+
+# Configure logging to file
+logging.basicConfig(filename='error.log', level=logging.ERROR,
+                    format='%(asctime)s %(levelname)s %(message)s')
+
 class ErrorHandler:
     def __init__(self):
         # Requirements for specific tasks
@@ -26,3 +33,15 @@ class ErrorHandler:
             return value
         except ValueError:
             return None
+
+def log_error(error_msg: str, extra: dict = None):
+    logging.error(f"{error_msg} | Extra: {extra}")
+    # Placeholder for Sentry or other service integration
+    # Example: sentry_sdk.capture_exception(error_msg)
+
+# Example usage
+if __name__ == "__main__":
+    try:
+        1/0
+    except Exception as e:
+        log_error(str(e), {"context": "test division by zero"})

@@ -1,0 +1,92 @@
+/* Bold, abstract, modern dashboard style */
+body, .stApp {
+    background: linear-gradient(135deg, #f72585 0%, #7209b7 50%, #3a0ca3 100%);
+    color: #fff;
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+.dashboard-header {
+    background: rgba(255,255,255,0.08);
+    border-radius: 1.5em 0 1.5em 0;
+    padding: 2em 2em 1em 2em;
+    margin-bottom: 1.5em;
+    box-shadow: 0 4px 32px 0 rgba(58,12,163,0.12);
+    border-left: 8px solid #f72585;
+    border-bottom: 8px solid #7209b7;
+}
+.angled-divider {
+    width: 100%;
+    height: 32px;
+    background: linear-gradient(120deg, #f72585 60%, #4361ee 100%);
+    clip-path: polygon(0 0, 100% 100%, 0 100%);
+    margin: 2em 0 2em 0;
+}
+.angled-divider.small {
+    height: 16px;
+    margin: 1em 0 1em 0;
+}
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+    color: #fff;
+    letter-spacing: 1px;
+    font-weight: 700;
+}
+.stButton>button {
+    background: linear-gradient(90deg, #f72585 0%, #7209b7 100%);
+    color: #fff;
+    border-radius: 2em;
+    border: none;
+    font-weight: bold;
+    box-shadow: 0 2px 8px 0 rgba(58,12,163,0.12);
+    transition: background 0.2s;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 1.1em;
+    padding: 0.75em 2em;
+}
+.stButton>button:hover {
+    background: linear-gradient(90deg, #7209b7 0%, #f72585 100%);
+}
+.footer {
+    margin-top: 2em;
+    text-align: right;
+    font-size: 1em;
+    color: #fff;
+    opacity: 0.7;
+    font-style: italic;
+}
+
+/* Responsive/mobile styles */
+@media (max-width: 900px) {
+    .dashboard-header {
+        padding: 1.2em 1em 0.7em 1em;
+        font-size: 1em;
+    }
+    .footer {
+        font-size: 0.95em;
+    }
+}
+@media (max-width: 600px) {
+    .dashboard-header {
+        padding: 0.7em 0.5em 0.5em 0.5em;
+        border-radius: 1em;
+        font-size: 0.95em;
+    }
+    .angled-divider, .angled-divider.small {
+        height: 10px;
+        margin: 0.7em 0 0.7em 0;
+    }
+    .stButton>button {
+        font-size: 1em;
+        padding: 0.5em 1em;
+    }
+    .footer {
+        font-size: 0.85em;
+        margin-top: 1em;
+    }
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+        font-size: 1.1em !important;
+    }
+}
+/* End mobile styles */

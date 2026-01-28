@@ -1,3 +1,7 @@
+from backend.realtime_collab import update_state, get_state
+from backend.encryption import generate_key, encrypt_data, decrypt_data
+from backend.ai_assistant import ask_ai_assistant
+from backend.analytics_dashboard import get_trends, get_risk_insights
 # app/frontend.py
 from __future__ import annotations
 
@@ -9,8 +13,11 @@ import shutil
 from decimal import Decimal
 from typing import Any, Dict, List, Tuple
 
+
 import streamlit as st
 import pandas as pd
+from backend.ai_predictive import detect_anomalies, predict_tax_liability, classify_document
+from backend.rbac import get_user_role, can_access
 
 from app.auth_supabase import require_login, supabase_logout
 from app.client_gate import require_client_selected, clear_selected_client
@@ -437,6 +444,11 @@ def main():
         st.markdown("---")
         _render_self_test_panel()
 
+
+    # --- RBAC enforcement ---
+    user_role = get_user_role(user.get('id', 1))
+    st.sidebar.info(f"Your role: {user_role}")
+
     # --- Dashboard ---
     if nav == "Dashboard":
         st.title("Firm Overview")
@@ -445,6 +457,72 @@ def main():
         st.subheader("Active Context")
         st.write(f"Client: **{client_name}**")
         st.caption(f"client_id: {client_id}")
+
+
+        # Advanced Analytics Dashboard (real data if available)
+        st.subheader("Advanced Analytics Dashboard")
+        # Try to load real transaction data (replace with your DB/API call)
+        real_txns = st.session_state.get("real_transactions")
+        txns = real_txns if real_txns else [
+            {"amount": 1000, "type": "expense"},
+            {"amount": 1200, "type": "expense"},
+            {"amount": 1100, "type": "expense"},
+            {"amount": 1300, "type": "expense"},
+            {"amount": 1250, "type": "expense"},
+            {"amount": 5000, "type": "income"},
+            {"amount": 5200, "type": "income"},
+            {"amount": 5100, "type": "income"},
+            {"amount": 5300, "type": "income"},
+            {"amount": 5250, "type": "income"},
+        ]
+        trends = get_trends(txns)
+        st.line_chart({"Expenses": trends["monthly_expenses"], "Income": trends["monthly_income"]})
+        risks = get_risk_insights(txns)
+        if risks:
+            st.warning(f"High expense months detected: {', '.join(str(r+1) for r in risks)}")
+        else:
+            st.success("No high-risk months detected.")
+
+        # Real-time Collaboration Demo
+        st.subheader("Real-time Collaboration (Demo)")
+        doc_id = f"dashboard_{client_id}"
+        user_id = user.get('id', 1)
+        collab_data = st.text_input("Shared note (live)", value=get_state(doc_id).get(user_id, {}).get("data", ""))
+        if st.button("Update Shared Note"):
+            update_state(doc_id, user_id, collab_data)
+            st.success("Note updated for all collaborators!")
+        st.write("Current shared state:", get_state(doc_id))
+
+        # End-to-End Encryption Demo
+        st.subheader("End-to-End Encryption (Demo)")
+        key = st.session_state.get("encryption_key")
+        if not key:
+            if st.button("Generate Encryption Key"):
+                key = generate_key()
+                st.session_state["encryption_key"] = key
+        if key:
+            secret = st.text_input("Sensitive data to encrypt", value="")
+            if st.button("Encrypt Data") and secret:
+                encrypted = encrypt_data(key, secret.encode())
+                st.session_state["encrypted_data"] = encrypted
+                st.success(f"Encrypted: {encrypted}")
+            encrypted = st.session_state.get("encrypted_data")
+            if encrypted and st.button("Decrypt Data"):
+                decrypted = decrypt_data(key, encrypted)
+                st.success(f"Decrypted: {decrypted.decode()}")
+
+        # AI Assistant Chatbot
+        st.subheader("8law AI Assistant (Chatbot)")
+        chat_input = st.text_input("Ask 8law a question about accounting, compliance, or your data:", key="ai_chat")
+        if st.button("Ask AI") and chat_input:
+            with st.spinner("8law is thinking..."):
+                ai_response = ask_ai_assistant(user.get('id', 1), chat_input)
+            st.success(ai_response)
+
+        # Plugin system (scaffold)
+        st.subheader("Plugins (Beta)")
+        st.caption("Easily add new AI/ML or compliance features via plugins.")
+        st.write(["ai_predictive", "rbac", "api_docs", "explainable_ai", "compliance", "analytics_dashboard", "ai_assistant"])
 
     # --- Tax Calculator ---
     elif nav == "Tax Calculator":
@@ -660,9 +738,13 @@ def main():
             st.success("Ingestion complete.")
             st.json(resp)
 
+
     # --- Client Management ---
     elif nav == "Client Management":
-        st.title("Client Registry")
+        if not can_access(user.get('id', 1), 'admin_panel'):
+            st.error("You do not have permission to access the admin panel.")
+            return
+        st.title("Client Registry (Admin)")
         st.write("Client tables + RLS + selection gate are now wired.")
         st.markdown("---")
         st.write(f"Active client: **{client_name}**")

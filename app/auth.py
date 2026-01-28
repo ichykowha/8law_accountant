@@ -3,7 +3,7 @@
 Deprecated auth shim.
 
 Previous versions used a single shared password + hashlib for demo access.
-8law now uses Supabase Auth (email/password + optional Turnstile), which is required
+8law now uses Supabase Auth (email/password + optional hCaptcha), which is required
 for Row Level Security (RLS) and safe multi-tenant operation.
 
 If older code calls check_password(), we treat that as "require login".
